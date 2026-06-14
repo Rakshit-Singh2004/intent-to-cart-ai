@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Plus, Minus, Trash2, ShoppingCart, Truck, CreditCard } from 'lucide-react';
+import { handleImageError } from '../utils/productImage';
 
 function CartDrawer({ open, items, onClose, onInc, onDec, onRemove, onCheckout }) {
   const subtotal = items.reduce((sum, p) => sum + p.price * p.quantity, 0);
@@ -48,7 +49,7 @@ function CartDrawer({ open, items, onClose, onInc, onDec, onRemove, onCheckout }
                 <img
                   src={item.image}
                   alt={item.name}
-                  onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/80?text=Item'; }}
+                  onError={handleImageError(item.category)}
                   className="w-16 h-16 rounded-lg object-cover bg-gray-50 flex-shrink-0"
                 />
                 <div className="flex-1 min-w-0">

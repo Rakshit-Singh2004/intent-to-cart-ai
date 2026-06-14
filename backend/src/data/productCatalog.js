@@ -1,7 +1,13 @@
 /**
  * Quick-Commerce Product Catalog
  * Simulates a real product database with categories relevant to instant needs
+ *
+ * NOTE: Product images are NOT defined inline. They are resolved through the
+ * centralized, deterministic image mapping in ./productImages.js so that every
+ * product always shows a category-correct image (with category fallbacks).
  */
+
+import { resolveProductImage } from './productImages.js';
 
 const productCatalog = [
   // Health & Medicine
@@ -81,4 +87,12 @@ const productCatalog = [
   { id: "prod_082", name: "Pet Poop Bags (Roll of 20)", category: "Pet Care", subcategory: "Hygiene", price: 49, image: "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=200", deliveryTime: "10 mins", inStock: true, tags: ["pet", "dog", "walk", "clean", "poop"] }
 ];
 
-export default productCatalog;
+// Apply the centralized, deterministic image mapping. Every product's image is
+// derived from its metadata (id + category) so the same product always renders
+// the same, category-correct image — with graceful category fallbacks.
+const productCatalogWithImages = productCatalog.map((product) => ({
+  ...product,
+  image: resolveProductImage(product)
+}));
+
+export default productCatalogWithImages;

@@ -159,25 +159,41 @@ function EditableProductCard({ product, onRemove, onReplace }) {
 // ─── RESULTS PAGE ────────────────────────────────────────────────────────────
 
 function ResultsPage({ intentResult, userInput, onCheckout, onReset }) {
-  // Initialize cart from best pack products (Standard pack if available, else first pack)
-  const getInitialProducts = () => {
-    const packs = intentResult?.zeroDecision?.packs || [];
-    if (packs.length > 0) {
-      const standardPack = packs.find(p => p.tier === 'Standard') || packs[0];
-      return standardPack.products || [];
+  // ── SINGLE SOURCE OF TRUTH ────────────────────────────────────────────────
+  // The selected pack drives everything: displayed products, quantities,
+  // totals, scores and the order summary. Default pack selection is intelligent
+  // and based on how many products the AI generated:
+  //   2 products      → Budget Pack
+  //   3–4 products     → Standard Pack
+  //   5+ products      → Premium Pack
+  const allPacks = intentResult?.zeroDecision?.packs || [];
+  const generatedCount = intentResult?.cart?.products?.length || 0;
+
+  const chooseDefaultPack = () => {
+    if (!allPacks.length) return null;
+    let tier = null;
+    if (generatedCount >= 5) tier = 'Premium';
+    else if (generatedCount >= 3) tier = 'Standard';
+    else if (generatedCount === 2) tier = 'Budget';
+
+    let pack = tier ? allPacks.find(p => p.tier === tier) : null;
+    if (!pack) {
+      // 0/1 generated, or tier missing → fall back to the recommended pack.
+      pack = allPacks.find(p => p.id === intentResult?.zeroDecision?.recommended_pack_id)
+        || allPacks.find(p => p.tier === 'Standard')
+        || allPacks[0];
     }
-    return intentResult?.cart?.products || [];
+    return pack;
   };
 
-  const getInitialPackId = () => {
-    const primaryId = intentResult?.zeroDecision?.primary_pack_id;
-    return primaryId || intentResult?.zeroDecision?.packs?.[0]?.id || null;
-  };
+  const defaultPack = chooseDefaultPack();
+  const initialProducts = defaultPack?.products || intentResult?.cart?.products || [];
+  const initialPackId = defaultPack?.id || null;
 
-  const [cartProducts, setCartProducts] = useState(getInitialProducts);
-  const [selectedPackId, setSelectedPackId] = useState(getInitialPackId);
+  const [cartProducts, setCartProducts] = useState(initialProducts);
+  const [selectedPackId, setSelectedPackId] = useState(initialPackId);
   const [metrics, setMetrics] = useState(() =>
-    recalculateCartMetrics(getInitialProducts(), intentResult, getInitialPackId())
+    recalculateCartMetrics(initialProducts, intentResult, initialPackId)
   );
   const [showScoreBreakdown, setShowScoreBreakdown] = useState(false);
 
@@ -317,7 +333,25 @@ function ResultsPage({ intentResult, userInput, onCheckout, onReset }) {
             </div>
           </div>
 
-          {/* ── SECTION 3: Editable Product List ── */}
+          {/* ── Smart Shopping Packs — choose a pack to build the cart ── */}
+          {packs && packs.length > 0 && (
+            <div className="bg-white rounded-2xl rounded-tl-md p-5 shadow-sm border border-gray-100 animate-slide-up space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amazon-orange" />
+                  <span className="text-sm font-semibold text-gray-700">Smart Shopping Packs</span>
+                </div>
+                <span className="text-xs text-gray-400">Select to update cart</span>
+              </div>
+              <SituationPacks
+                packs={packs}
+                selectedPackId={selectedPackId}
+                onSelectPack={handleSelectPack}
+              />
+            </div>
+          )}
+
+          {/* ── Selected Pack Products (rendered from the selected pack) ── */}
           <div className="space-y-3 animate-slide-up">
             <h4 className="text-sm font-semibold text-gray-600 flex items-center gap-2">
               <span>Products ({cartProducts.length})</span>
@@ -325,7 +359,7 @@ function ResultsPage({ intentResult, userInput, onCheckout, onReset }) {
             </h4>
             {cartProducts.length === 0 ? (
               <div className="text-center py-8 text-gray-400 text-sm">
-                Cart is empty. Select a pack below to repopulate.
+                Cart is empty. Select a pack above to repopulate.
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -366,24 +400,6 @@ function ResultsPage({ intentResult, userInput, onCheckout, onReset }) {
               </div>
               <p className="text-sm text-gray-600">{optimization.explanation}</p>
               <CartHealthBadge health={optimization.health} score={Math.round(optimization.score)} />
-            </div>
-          )}
-
-          {/* ── SECTION 5: Smart Shopping Packs ── */}
-          {packs && packs.length > 0 && (
-            <div className="bg-white rounded-2xl rounded-tl-md p-5 shadow-sm border border-gray-100 animate-slide-up space-y-4">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-amazon-orange" />
-                  <span className="text-sm font-semibold text-gray-700">Smart Shopping Packs</span>
-                </div>
-                <span className="text-xs text-gray-400">Select to update cart</span>
-              </div>
-              <SituationPacks
-                packs={packs}
-                selectedPackId={selectedPackId}
-                onSelectPack={handleSelectPack}
-              />
             </div>
           )}
 

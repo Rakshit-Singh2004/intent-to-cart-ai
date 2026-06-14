@@ -62,21 +62,14 @@ router.post('/analyze', async (req, res, next) => {
     };
 
     // ── STEP 3: Product Matching (category-validated) ────────────────────
-    const matchedProducts = matchProducts(
+    let matchedProducts = matchProducts(
       enrichedIntent.recommended_products,
       { subjectDetection }
     );
 
     console.log(`📦 Matched ${matchedProducts.length} products for category: ${subjectDetection.allowedCategories.join(', ')}`);
 
-    // ── STEP 4: Cart Optimization ────────────────────────────────────────
-    const optimization = optimizeCart(enrichedIntent, matchedProducts, {
-      userInput: input,
-      subjectDetection
-    });
-
-    // ── STEP 5: Zero-Decision Pack Generation ────────────────────────────
-    // Pass subjectDetection inside so scenario selection uses it
+    // ── STEP 4: Zero-Decision Pack Generation (handles multi-intent) ─────
     const intentResultForPacks = {
       ...enrichedIntent,
       subjectDetection,
@@ -88,6 +81,29 @@ router.post('/analyze', async (req, res, next) => {
       }
     };
     const zeroDecision = generateZeroDecisionEngine(intentResultForPacks, input);
+
+    // For combined (multi-intent) requests, derive the generated cart from the
+    // recommended combined pack so the cart spans every detected category
+    // (e.g. Snacks + Medicine) and the displayed product count is coherent.
+    if (subjectDetection.multiIntent && zeroDecision?.packs?.length) {
+      const recPack = zeroDecision.packs.find(p => p.id === zeroDecision.recommended_pack_id)
+        || zeroDecision.packs.find(p => p.tier === 'Standard')
+        || zeroDecision.packs[0];
+      if (recPack?.products?.length) {
+        matchedProducts = recPack.products.map(p => ({
+          ...p,
+          reason: p.reason || `Included to cover your combined needs (${recPack.allowedCategories?.join(', ')}).`
+        }));
+      }
+      enrichedIntent.cart_name = 'Combined Essentials Kit';
+      enrichedIntent.reasoning = `Detected multiple needs — ${subjectDetection.topics.map(t => t.missionName).join(' and ')}. Combining products across these categories into a single cart so nothing is missed.`;
+    }
+
+    // ── STEP 5: Cart Optimization (on the final product set) ─────────────
+    const optimization = optimizeCart(enrichedIntent, matchedProducts, {
+      userInput: input,
+      subjectDetection
+    });
 
     // ── STEP 6: Missing Essentials ────────────────────────────────────────
     const missingEssentials = detectMissingEssentials(matchedProducts, subjectDetection.situation);

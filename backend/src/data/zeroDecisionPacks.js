@@ -755,6 +755,117 @@ export const scenarioCatalog = {
     ]
   },
 
+  // ── MEDICINE RUN (FEVER / COLD / GENERAL ILLNESS) ─────────────────────────
+  medicine_run: {
+    label: 'Medicine Run',
+    missionName: 'Medicine & Fever Relief',
+    allowedCategories: ['Health'],
+    keywords: ['medicine', 'fever', 'sick', 'cold', 'cough', 'flu', 'headache', 'pain',
+               'paracetamol', 'tablet', 'ors', 'temperature', 'illness'],
+    prompt: 'Build a fever and general-illness relief pack with medicine and hydration.',
+    missingEssentials: [
+      { name: 'ORS Sachets (Pack of 10)', reason: 'Hydration support is important during fever.' },
+      { name: 'Digital Thermometer', reason: 'Useful for monitoring temperature.' }
+    ],
+    packs: [
+      {
+        id: 'medicine-run-budget',
+        title: 'Budget Pack',
+        subtitle: 'Core fever relief',
+        tier: 'Budget',
+        targetBudget: 199,
+        allowedCategories: ['Health'],
+        items: [
+          ['paracetamol', 'medicine'],
+          ['ors', 'hydration']
+        ]
+      },
+      {
+        id: 'medicine-run-standard',
+        title: 'Standard Pack',
+        subtitle: 'Medicine, hydration and monitoring',
+        tier: 'Standard',
+        targetBudget: 499,
+        allowedCategories: ['Health'],
+        items: [
+          ['paracetamol', 'medicine'],
+          ['ors', 'hydration'],
+          ['digital thermometer', 'health']
+        ]
+      },
+      {
+        id: 'medicine-run-premium',
+        title: 'Premium Pack',
+        subtitle: 'Complete illness care bundle',
+        tier: 'Premium',
+        targetBudget: 799,
+        allowedCategories: ['Health'],
+        items: [
+          ['paracetamol', 'medicine'],
+          ['ors', 'hydration'],
+          ['digital thermometer', 'health'],
+          ['antiseptic', 'clean'],
+          ['band-aid', 'wound']
+        ]
+      }
+    ]
+  },
+
+  // ── SNACK RUN (SNACKS & DRINKS) ───────────────────────────────────────────
+  snack_run: {
+    label: 'Snack Run',
+    missionName: 'Snack Stock-Up',
+    allowedCategories: ['Snacks', 'Beverages', 'Dessert'],
+    keywords: ['snacks', 'snack', 'chips', 'munchies', 'popcorn', 'drinks', 'soft drinks', 'juice', 'nachos'],
+    prompt: 'Stock up on snacks and drinks for a quick craving fix.',
+    missingEssentials: [
+      { name: 'Popcorn Tub', reason: 'A popular snacking choice.' },
+      { name: 'Soft Drinks (6 Pack)', reason: 'Drinks pair well with snacks.' }
+    ],
+    packs: [
+      {
+        id: 'snack-run-budget',
+        title: 'Budget Pack',
+        subtitle: 'Snacks and a drink',
+        tier: 'Budget',
+        targetBudget: 399,
+        allowedCategories: ['Snacks', 'Beverages'],
+        items: [
+          ['chips', 'snacks'],
+          ['soft drinks', 'drinks']
+        ]
+      },
+      {
+        id: 'snack-run-standard',
+        title: 'Standard Pack',
+        subtitle: 'Snack variety with drinks',
+        tier: 'Standard',
+        targetBudget: 599,
+        allowedCategories: ['Snacks', 'Beverages'],
+        items: [
+          ['chips', 'snacks'],
+          ['soft drinks', 'drinks'],
+          ['popcorn', 'snack']
+        ]
+      },
+      {
+        id: 'snack-run-premium',
+        title: 'Premium Pack',
+        subtitle: 'Full snack and treat spread',
+        tier: 'Premium',
+        targetBudget: 899,
+        allowedCategories: ['Snacks', 'Beverages', 'Dessert'],
+        items: [
+          ['chips', 'snacks'],
+          ['soft drinks', 'drinks'],
+          ['popcorn', 'snack'],
+          ['chocolate cake', 'dessert'],
+          ['ice cream', 'frozen']
+        ]
+      }
+    ]
+  },
+
   // ── DEFAULT FALLBACK ─────────────────────────────────────────────────────
   default: {
     label: 'Essential Kit',
