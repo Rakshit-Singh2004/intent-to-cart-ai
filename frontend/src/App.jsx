@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Header from './components/Header';
-import IntentInput from './components/IntentInput';
+import QuickSearches from './components/QuickSearches';
+import ProductBrowse from './components/ProductBrowse';
+import CartDrawer from './components/CartDrawer';
 import ResultsPage from './components/ResultsPage';
 import OrderConfirmation from './components/OrderConfirmation';
-import ExamplePrompts from './components/ExamplePrompts';
 import LoadingSequence from './components/LoadingSequence';
-import { analyzeIntent, createCart, checkout } from './utils/api';
+import { analyzeIntent, createCart, checkout, fetchCategories } from './utils/api';
 
 function App() {
   const [currentView, setCurrentView] = useState('home');
@@ -15,11 +16,54 @@ function App() {
   const [userInput, setUserInput] = useState('');
   const [clarification, setClarification] = useState(null);
 
-  // ── INTENT SUBMISSION ─────────────────────────────────────────────────────
+  // Storefront state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState('All');
+  const [categories, setCategories] = useState([]);
 
+  // Shopping cart (browse) state
+  const [cart, setCart] = useState([]);
+  const [cartOpen, setCartOpen] = useState(false);
+
+  const cartCount = cart.reduce((sum, p) => sum + p.quantity, 0);
+
+  // ── Load categories once ──────────────────────────────────────────────────
+  useEffect(() => {
+    fetchCategories().then(setCategories).catch(() => setCategories([]));
+  }, []);
+
+  // ── CART OPERATIONS ─────────────────────────────────────────────────────
+  const handleAddToCart = useCallback((product) => {
+    setCart((prev) => {
+      const existing = prev.find((p) => p.id === product.id);
+      if (existing) {
+        return prev.map((p) => (p.id === product.id ? { ...p, quantity: p.quantity + 1 } : p));
+      }
+      return [...prev, { ...product, quantity: 1 }];
+    });
+  }, []);
+
+  const incQty = useCallback((id) => {
+    setCart((prev) => prev.map((p) => (p.id === id ? { ...p, quantity: p.quantity + 1 } : p)));
+  }, []);
+
+  const decQty = useCallback((id) => {
+    setCart((prev) =>
+      prev
+        .map((p) => (p.id === id ? { ...p, quantity: p.quantity - 1 } : p))
+        .filter((p) => p.quantity > 0)
+    );
+  }, []);
+
+  const removeFromCart = useCallback((id) => {
+    setCart((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  // ── INTENT (SMART CART) SUBMISSION ───────────────────────────────────────
   const handleIntentSubmit = async (input) => {
     setUserInput(input);
     setError(null);
+    setCartOpen(false);
     setCurrentView('loading');
 
     try {
@@ -32,19 +76,48 @@ function App() {
       }
 
       setIntentResult(result.data);
-
-      // Loading sequence takes ~4s — show results when it completes
-      setTimeout(() => {
-        setCurrentView('results');
-      }, 4200);
+      setTimeout(() => setCurrentView('results'), 4200);
     } catch (err) {
       setError(err.message || 'Failed to analyze intent. Please try again.');
       setCurrentView('home');
     }
   };
 
-  // ── CHECKOUT ──────────────────────────────────────────────────────────────
+  // ── BROWSE CART CHECKOUT ──────────────────────────────────────────────────
+  const handleBrowseCheckout = async () => {
+    try {
+      // Flatten by quantity so totals reflect the chosen amounts
+      const flatProducts = cart.flatMap((item) =>
+        Array.from({ length: item.quantity }, () => ({
+          id: item.id, name: item.name, category: item.category,
+          price: item.price, image: item.image, deliveryTime: item.deliveryTime
+        }))
+      );
 
+      const cartResult = await createCart(flatProducts, 'My Cart', 'My Cart', 'Custom');
+      const orderResult = await checkout(cartResult.data.id);
+
+      setOrderInfo({
+        ...orderResult.data,
+        missionName: 'My Cart',
+        selectedPackTier: 'Custom',
+        products: flatProducts,
+        totals: {
+          subtotal: flatProducts.reduce((s, p) => s + p.price, 0),
+          total: orderResult.data?.totals?.total ?? flatProducts.reduce((s, p) => s + p.price, 0)
+        }
+      });
+
+      setCart([]);
+      setCartOpen(false);
+      setCurrentView('ordered');
+    } catch (err) {
+      setError(err.message || 'Checkout failed. Please try again.');
+      setCartOpen(false);
+    }
+  };
+
+  // ── AI RESULTS CHECKOUT ───────────────────────────────────────────────────
   const handleCheckout = async (cartProducts, selectedPack) => {
     try {
       const missionName = intentResult?.zeroDecision?.scenario?.missionName
@@ -52,12 +125,8 @@ function App() {
         || 'Shopping Mission';
 
       const cartResult = await createCart(
-        cartProducts,
-        missionName,
-        missionName,
-        selectedPack?.tier || 'Custom'
+        cartProducts, missionName, missionName, selectedPack?.tier || 'Custom'
       );
-
       const orderResult = await checkout(cartResult.data.id);
 
       setOrderInfo({
@@ -67,8 +136,7 @@ function App() {
         products: cartProducts,
         totals: {
           subtotal: cartProducts.reduce((s, p) => s + p.price, 0),
-          total: orderResult.data?.totals?.total
-            ?? cartProducts.reduce((s, p) => s + p.price, 0)
+          total: orderResult.data?.totals?.total ?? cartProducts.reduce((s, p) => s + p.price, 0)
         }
       });
 
@@ -78,8 +146,7 @@ function App() {
     }
   };
 
-  // ── RESET ─────────────────────────────────────────────────────────────────
-
+  // ── RESET / NAV ────────────────────────────────────────────────────────────
   const handleReset = () => {
     setCurrentView('home');
     setIntentResult(null);
@@ -87,9 +154,9 @@ function App() {
     setClarification(null);
     setError(null);
     setUserInput('');
+    setSearchQuery('');
+    setActiveCategory('All');
   };
-
-  // ── CLARIFICATION ─────────────────────────────────────────────────────────
 
   const handleClarificationSubmit = async (answer) => {
     if (!userInput) return;
@@ -97,53 +164,92 @@ function App() {
     await handleIntentSubmit(`${userInput}. ${answer}`);
   };
 
-  // ── RENDER ────────────────────────────────────────────────────────────────
+  // Header search submit (plain product search) sends us to the storefront
+  const handleSearchSubmit = (q) => {
+    setSearchQuery(q);
+    setActiveCategory('All');
+    if (currentView !== 'home') setCurrentView('home');
+  };
+
+  const handleSearchChange = (q) => {
+    setSearchQuery(q);
+    if (currentView !== 'home') setCurrentView('home');
+  };
+
+  const handleCategorySelect = (cat) => {
+    setActiveCategory(cat);
+    if (currentView !== 'home') setCurrentView('home');
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header onReset={handleReset} />
+      <Header
+        onReset={handleReset}
+        searchQuery={searchQuery}
+        onSearchChange={handleSearchChange}
+        onSearchSubmit={handleSearchSubmit}
+        onSmartSearch={handleIntentSubmit}
+        cartCount={cartCount}
+        onCartClick={() => setCartOpen(true)}
+        categories={categories}
+        activeCategory={activeCategory}
+        onCategorySelect={handleCategorySelect}
+      />
 
-      <main className="max-w-4xl mx-auto px-4 py-6">
+      <CartDrawer
+        open={cartOpen}
+        items={cart}
+        onClose={() => setCartOpen(false)}
+        onInc={incQty}
+        onDec={decQty}
+        onRemove={removeFromCart}
+        onCheckout={handleBrowseCheckout}
+      />
+
+      <main className="max-w-7xl mx-auto px-4 lg:px-6 py-5">
 
         {/* Error Banner */}
         {error && (
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 animate-fade-in">
             <p className="font-medium">Something went wrong</p>
             <p className="text-sm mt-1">{error}</p>
-            <button
-              onClick={() => setError(null)}
-              className="mt-2 text-xs text-red-500 hover:text-red-700 underline"
-            >
+            <button onClick={() => setError(null)} className="mt-2 text-xs text-red-500 hover:text-red-700 underline">
               Dismiss
             </button>
           </div>
         )}
 
-        {/* ── HOME ── */}
+        {/* ── HOME / STOREFRONT ── */}
         {currentView === 'home' && (
           <div className="animate-fade-in">
-            <div className="text-center mb-8">
-              <h1 className="text-4xl md:text-5xl font-bold text-amazon-blue mb-3">
-                Intent-to-Cart AI
-              </h1>
-              <p className="text-xl text-gray-600 mb-3">
-                Turn real-life situations into ready-to-checkout carts in seconds.
-              </p>
-              <p className="text-gray-500 text-sm">
-                No searching. No browsing. No comparing.<br />
-                Just describe the situation.
-              </p>
+            {/* Hero strip */}
+            <div className="rounded-2xl gradient-bg text-white px-5 py-5 lg:px-8 lg:py-6 mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h2 className="text-xl lg:text-2xl font-bold">Everything you need, delivered in minutes</h2>
+                <p className="text-sm text-gray-300 mt-1">
+                  Shop thousands of essentials — or describe a situation and let AI build your cart.
+                </p>
+              </div>
+              <span className="self-start sm:self-center text-xs font-semibold bg-amazon-orange text-amazon-darkBlue px-3 py-1.5 rounded-full">
+                ⚡ 10–15 min delivery
+              </span>
             </div>
 
-            <IntentInput onSubmit={handleIntentSubmit} />
-            <ExamplePrompts onSelect={handleIntentSubmit} />
+            {/* Quick searches BELOW the search box */}
+            <QuickSearches onSelect={handleIntentSubmit} />
+
+            {/* Product storefront */}
+            <ProductBrowse
+              searchQuery={searchQuery}
+              activeCategory={activeCategory}
+              cartItems={cart}
+              onAddToCart={handleAddToCart}
+            />
           </div>
         )}
 
         {/* ── LOADING ── */}
-        {currentView === 'loading' && (
-          <LoadingSequence />
-        )}
+        {currentView === 'loading' && <LoadingSequence />}
 
         {/* ── CLARIFICATION ── */}
         {currentView === 'clarify' && clarification && (
@@ -156,7 +262,7 @@ function App() {
                 {clarification.clarification?.question || 'What do you need help with?'}
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {(clarification.clarification?.options || ['Food', 'Medicine', 'Toys', 'Other']).map(option => (
+                {(clarification.clarification?.options || ['Food', 'Medicine', 'Toys', 'Other']).map((option) => (
                   <button
                     key={option}
                     onClick={() => handleClarificationSubmit(option)}
@@ -170,22 +276,23 @@ function App() {
           </div>
         )}
 
-        {/* ── RESULTS (single page, all sections visible) ── */}
+        {/* ── AI RESULTS ── */}
         {currentView === 'results' && intentResult && (
-          <ResultsPage
-            intentResult={intentResult}
-            userInput={userInput}
-            onCheckout={handleCheckout}
-            onReset={handleReset}
-          />
+          <div className="max-w-4xl mx-auto">
+            <ResultsPage
+              intentResult={intentResult}
+              userInput={userInput}
+              onCheckout={handleCheckout}
+              onReset={handleReset}
+            />
+          </div>
         )}
 
-        {/* ── ORDER CONFIRMATION + DELIVERY TRACKING ── */}
+        {/* ── ORDER CONFIRMATION ── */}
         {currentView === 'ordered' && orderInfo && (
-          <OrderConfirmation
-            orderInfo={orderInfo}
-            onReset={handleReset}
-          />
+          <div className="max-w-4xl mx-auto">
+            <OrderConfirmation orderInfo={orderInfo} onReset={handleReset} />
+          </div>
         )}
 
       </main>
