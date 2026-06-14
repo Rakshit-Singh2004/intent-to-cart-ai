@@ -49,7 +49,7 @@ function CartDrawer({ open, items, onClose, onInc, onDec, onRemove, onCheckout }
                 <img
                   src={item.image}
                   alt={item.name}
-                  onError={handleImageError(item.category)}
+                  onError={handleImageError(item.category, item.name)}
                   className="w-16 h-16 rounded-lg object-cover bg-gray-50 flex-shrink-0"
                 />
                 <div className="flex-1 min-w-0">

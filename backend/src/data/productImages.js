@@ -1,167 +1,163 @@
 /**
- * Centralized Product Image Mapping
+ * Centralized Product Image System
  * --------------------------------------------------------------------------
- * Single source of truth for product imagery. Every product resolves to a
- * deterministic, category-correct image:
+ * Images are generated as SELF-CONTAINED SVG data URIs — no external network
+ * requests, so every product image is ALWAYS available (never broken) in any
+ * environment, online or offline.
  *
- *   1. An explicit, curated image keyed by product id (PRODUCT_IMAGES).
- *   2. If no explicit image exists OR the curated image fails category
- *      validation, a category-specific placeholder is used (never an image
- *      from an unrelated category).
- *   3. A generic placeholder as the final safety net.
+ * Each image is deterministic and metadata-driven:
+ *   - Category decides the colour theme + icon (so a Health product looks like
+ *     health, a Beverage like a drink, Electronics like electronics, etc.).
+ *   - The product name is rendered on the tile, guaranteeing the image always
+ *     matches the actual product.
  *
- * Images are static/cached (no runtime image searches) so the same product
- * always renders the same image. Placeholders are inline SVG data URIs, so
- * they can never produce a broken image request.
+ * The same product always produces the same image (pure function of metadata).
  */
 
-const UNSPLASH = (id, w = 400) => `https://images.unsplash.com/${id}?w=${w}&q=80&auto=format&fit=crop`;
-
-// ─── EXPLICIT, CATEGORY-VALIDATED PRODUCT IMAGES ─────────────────────────────
-// Each entry declares the category the image belongs to. resolveProductImage()
-// only uses the image when that category matches the product's category, which
-// guarantees a coffee product never shows a juice image, a protein bar never
-// shows a personal-care image, etc.
-export const PRODUCT_IMAGES = {
-  // Health & Medicine
-  prod_001: { url: UNSPLASH('photo-1584308666544-e63fe075efb2'), category: 'Health' },      // thermometer
-  prod_002: { url: UNSPLASH('photo-1587854692152-cbe660dbde88'), category: 'Health' },      // syrup / medicine
-  prod_003: { url: UNSPLASH('photo-1559757175-5700dde675bc'), category: 'Health' },         // ORS / sachets
-  prod_005: { url: UNSPLASH('photo-1583947215259-38e31be8751f'), category: 'Health' },      // band-aid
-  prod_006: { url: UNSPLASH('photo-1587854692152-cbe660dbde88'), category: 'Health' },      // antiseptic (medicine bottle)
-  prod_007: { url: UNSPLASH('photo-1583947215259-38e31be8751f'), category: 'Health' },      // cotton / first aid
-
-  // Food & Cooking
-  prod_010: { url: UNSPLASH('photo-1612929633738-8fe44f7ec841'), category: 'Food' },         // instant noodles
-  prod_011: { url: UNSPLASH('photo-1509440159596-0249088772ff'), category: 'Food' },         // bread
-  prod_012: { url: UNSPLASH('photo-1582722872445-44dc5f7e3c8f'), category: 'Food' },         // eggs
-  prod_013: { url: UNSPLASH('photo-1589985270826-4b7bb135bc9d'), category: 'Food' },         // butter
-  prod_014: { url: UNSPLASH('photo-1563636619-e9143da7973b'), category: 'Food' },            // milk
-  prod_014a: { url: UNSPLASH('photo-1563636619-e9143da7973b'), category: 'Food' },           // milk
-  prod_015: { url: UNSPLASH('photo-1551462147-37885acc36f1'), category: 'Food' },            // pasta
-  prod_016: { url: UNSPLASH('photo-1472476443507-c7a5948772fc'), category: 'Food' },         // pasta sauce
-  prod_017: { url: UNSPLASH('photo-1586201375761-83865001e31c'), category: 'Food' },         // rice
-
-  // Dessert
-  prod_018: { url: UNSPLASH('photo-1501443762994-82bd5dace89a'), category: 'Dessert' },      // ice cream
-  prod_019: { url: UNSPLASH('photo-1563729784474-d77dbb933a9e'), category: 'Dessert' },      // chocolate cake
-
-  // Snacks
-  prod_019a: { url: UNSPLASH('photo-1505576399279-565b52d4ac71'), category: 'Snacks' },      // popcorn
-  prod_023: { url: UNSPLASH('photo-1566478989037-eec170784d0b'), category: 'Snacks' },       // chips
-
-  // Party & Celebration
-  prod_019b: { url: UNSPLASH('photo-1513151233558-d860c5398176'), category: 'Party' },       // disposable cups
-  prod_020: { url: UNSPLASH('photo-1513151233558-d860c5398176'), category: 'Party' },        // party cups
-  prod_021: { url: UNSPLASH('photo-1513151233558-d860c5398176'), category: 'Party' },        // paper plates
-  prod_024: { url: UNSPLASH('photo-1602523961358-f9f03dd557db'), category: 'Party' },        // birthday candles
-  prod_025: { url: UNSPLASH('photo-1513151233558-d860c5398176'), category: 'Party' },        // balloons / party
-  prod_031a: { url: UNSPLASH('photo-1513151233558-d860c5398176'), category: 'Party' },       // disposable plates
-
-  // Home
-  prod_019c: { url: UNSPLASH('photo-1585421514738-01798e348b17'), category: 'Home' },        // tissues
-  prod_052: { url: UNSPLASH('photo-1602523961358-f9f03dd557db'), category: 'Home' },         // candles
-
-  // Beverages
-  prod_022: { url: UNSPLASH('photo-1527960471264-932f39eb5846'), category: 'Beverages' },    // soft drinks
-  prod_074: { url: UNSPLASH('photo-1509042239860-f550ce710b93'), category: 'Beverages' },    // coffee
-  prod_075: { url: UNSPLASH('photo-1527960471264-932f39eb5846'), category: 'Beverages' },    // energy drink (can)
-
-  // Pet Care
-  prod_023a: { url: UNSPLASH('photo-1589924691995-400dc9ecc119'), category: 'Pet Care' },    // dog treats
-  prod_023b: { url: UNSPLASH('photo-1589924691995-400dc9ecc119'), category: 'Pet Care' },    // chew sticks
-  prod_023c: { url: UNSPLASH('photo-1589924691995-400dc9ecc119'), category: 'Pet Care' },    // pet bowl
-  prod_023d: { url: UNSPLASH('photo-1589924691995-400dc9ecc119'), category: 'Pet Care' },    // dental chews
-  prod_080: { url: UNSPLASH('photo-1589924691995-400dc9ecc119'), category: 'Pet Care' },     // dog food
-  prod_081: { url: UNSPLASH('photo-1589924691995-400dc9ecc119'), category: 'Pet Care' },     // cat food
-  prod_082: { url: UNSPLASH('photo-1589924691995-400dc9ecc119'), category: 'Pet Care' },     // poop bags
-
-  // Cleaning
-  prod_030: { url: UNSPLASH('photo-1585421514284-efb74c2b69ba'), category: 'Cleaning' },     // floor cleaner
-  prod_031: { url: UNSPLASH('photo-1585421514284-efb74c2b69ba'), category: 'Cleaning' },     // paper towels
-  prod_032: { url: UNSPLASH('photo-1585421514284-efb74c2b69ba'), category: 'Cleaning' },     // garbage bags
-  prod_033: { url: UNSPLASH('photo-1585421514284-efb74c2b69ba'), category: 'Cleaning' },     // mop
-
-  // Personal Care
-  prod_040: { url: UNSPLASH('photo-1559650656-5d1d361ad10e'), category: 'Personal Care' },   // toothbrush combo
-  prod_041: { url: UNSPLASH('photo-1583845112203-29329902332e'), category: 'Personal Care' },// towel
-  prod_042: { url: UNSPLASH('photo-1559650656-5d1d361ad10e'), category: 'Personal Care' },   // shampoo
-  prod_043: { url: UNSPLASH('photo-1559650656-5d1d361ad10e'), category: 'Personal Care' },   // soap
-
-  // Electronics
-  prod_050: { url: UNSPLASH('photo-1609091839311-d5365f9ff1c5'), category: 'Electronics' },  // power bank
-  prod_051: { url: UNSPLASH('photo-1609091839311-d5365f9ff1c5'), category: 'Electronics' },  // usb-c cable
-  prod_053: { url: UNSPLASH('photo-1609091839311-d5365f9ff1c5'), category: 'Electronics' },  // flashlight
-  prod_054: { url: UNSPLASH('photo-1609091839311-d5365f9ff1c5'), category: 'Electronics' },  // AA batteries
-  prod_054a: { url: UNSPLASH('photo-1609091839311-d5365f9ff1c5'), category: 'Electronics' }, // power bank fast
-
-  // Accessories (rain gear)
-  prod_060: { url: UNSPLASH('photo-1534397860164-120c97f4db0b'), category: 'Accessories' },  // umbrella
-  prod_061: { url: UNSPLASH('photo-1534397860164-120c97f4db0b'), category: 'Accessories' },  // raincoat
-
-  // Stationery
-  prod_070: { url: UNSPLASH('photo-1531346878377-a5be20888e57'), category: 'Stationery' },   // notebook
-  prod_071: { url: UNSPLASH('photo-1531346878377-a5be20888e57'), category: 'Stationery' },   // pen set
-  prod_072: { url: UNSPLASH('photo-1531346878377-a5be20888e57'), category: 'Stationery' },   // highlighter
-  prod_073: { url: UNSPLASH('photo-1531346878377-a5be20888e57'), category: 'Stationery' }    // sticky notes
-};
-
-// ─── CATEGORY-SPECIFIC FALLBACK PLACEHOLDERS ─────────────────────────────────
-// Used whenever an explicit image is unavailable or fails validation. These are
-// inline SVGs (no network request) so they always render and stay on-brand.
+// ─── CATEGORY THEME (background, accent) ─────────────────────────────────────
 const CATEGORY_PALETTE = {
-  Health: ['#e6f4ea', '#2e7d4f'],
-  'Baby Care': ['#fdeef4', '#c2557f'],
-  Food: ['#fff3e0', '#c77a18'],
-  Dessert: ['#fce4ec', '#b84a73'],
-  Snacks: ['#fff7e0', '#b8870b'],
-  Beverages: ['#e8f1fb', '#2563a8'],
-  Party: ['#f3e9fb', '#7b3fb0'],
-  Home: ['#eef2f7', '#5a6b82'],
-  'Pet Care': ['#eaf6ee', '#3a8a52'],
-  Cleaning: ['#e6f6f8', '#1f8a99'],
-  'Personal Care': ['#eef0fb', '#4b54a8'],
-  Electronics: ['#eceff3', '#3a4252'],
-  Accessories: ['#e9f3fb', '#2f6aa8'],
-  Stationery: ['#fdf3e7', '#c07a1e']
+  Health: ['#e7f5ec', '#1f8a4c'],
+  'Baby Care': ['#fdeef5', '#c2557f'],
+  Food: ['#fff3e2', '#c9791a'],
+  Dessert: ['#fde7ef', '#bd4a75'],
+  Snacks: ['#fff6df', '#b8870b'],
+  Beverages: ['#e7f0fb', '#2563a8'],
+  Party: ['#f4eafb', '#7e40b2'],
+  Home: ['#eef2f7', '#566b86'],
+  'Pet Care': ['#e9f6ee', '#388a52'],
+  Cleaning: ['#e4f6f8', '#1c8a99'],
+  'Personal Care': ['#eceffb', '#4a54aa'],
+  Electronics: ['#eceff4', '#3a4253'],
+  Accessories: ['#e8f3fb', '#2f6aaa'],
+  Stationery: ['#fdf2e6', '#bf7a1e']
 };
 
-function svgPlaceholder(label, bg = '#eef2f7', fg = '#94a3b8') {
-  const safeLabel = String(label || 'Product').replace(/[<>&]/g, ' ');
+// ─── CATEGORY ICONS (24x24 stroke paths, drawn in the accent colour) ─────────
+const DEFAULT_ICON =
+  '<path d="m7.5 4.3 9 5.1"/><path d="M21 8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>';
+
+const CATEGORY_ICONS = {
+  Health:
+    '<path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/>',
+  'Baby Care':
+    '<path d="M8 2h8"/><path d="M9 2v2.8a4 4 0 0 1-.7 2.2l-.6 1A4 4 0 0 0 7 10.2V20a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-9.8a4 4 0 0 0-.7-2.2l-.6-1A4 4 0 0 1 15 4.8V2"/><path d="M7 15a6.5 6.5 0 0 1 5 0 6.5 6.5 0 0 0 5 0"/>',
+  Food:
+    '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
+  Dessert:
+    '<path d="m7 11 4.08 10.35a1 1 0 0 0 1.84 0L17 11"/><path d="M17 7A5 5 0 0 0 7 7"/><path d="M17 7a2 2 0 0 1 0 4H7a2 2 0 0 1 0-4"/>',
+  Snacks:
+    '<path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><path d="M8.5 8.5v.01"/><path d="M16 15.5v.01"/><path d="M12 12v.01"/><path d="M11 17v.01"/><path d="M7 14v.01"/>',
+  Beverages:
+    '<path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" x2="6" y1="2" y2="4"/><line x1="10" x2="10" y1="2" y2="4"/><line x1="14" x2="14" y1="2" y2="4"/>',
+  Party:
+    '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C9 3 12 5 12 8c0-3 3-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
+  Home:
+    '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+  'Pet Care':
+    '<circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.8 1Q6.5 17.5 4.5 16.8A3.5 3.5 0 0 1 5.5 10Z"/>',
+  Cleaning:
+    '<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C4 11.1 3 13 3 15a7 7 0 0 0 7 7z"/>',
+  'Personal Care':
+    '<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C4 11.1 3 13 3 15a7 7 0 0 0 7 7z"/>',
+  Electronics:
+    '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+  Accessories:
+    '<path d="M22 12a10.06 10.06 0 0 0-20 0Z"/><path d="M12 12v8a2 2 0 0 0 4 0"/><path d="M12 2v1"/>',
+  Stationery:
+    '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>'
+};
+
+// ─── TEXT HELPERS ────────────────────────────────────────────────────────────
+function escapeXml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Wrap a product name into up to 3 centered lines (~17 chars each).
+function wrapName(name, maxChars = 17, maxLines = 3) {
+  const words = String(name || 'Product').split(/\s+/);
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    if (!current) {
+      current = word;
+    } else if ((current + ' ' + word).length <= maxChars) {
+      current += ' ' + word;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+    if (lines.length === maxLines) break;
+  }
+  if (current && lines.length < maxLines) lines.push(current);
+  if (lines.length === maxLines) {
+    // Trim the last line and add an ellipsis if the name was longer.
+    const consumed = lines.join(' ').length;
+    if (consumed < String(name).length) {
+      let last = lines[maxLines - 1];
+      if (last.length > maxChars - 1) last = last.slice(0, maxChars - 1);
+      lines[maxLines - 1] = last + '…';
+    }
+  }
+  return lines;
+}
+
+// ─── TILE BUILDER ────────────────────────────────────────────────────────────
+function buildTile(name, category) {
+  const [bg, fg] = CATEGORY_PALETTE[category] || ['#eef2f7', '#64748b'];
+  const icon = CATEGORY_ICONS[category] || DEFAULT_ICON;
+  const lines = wrapName(name);
+
+  // Icon: 24x24 path, scaled ~5x (120px), horizontally centered, upper area.
+  const iconGroup =
+    `<g transform="translate(140,86) scale(5)" fill="none" stroke="${fg}" ` +
+    `stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${icon}</g>`;
+
+  // Category label (top) + product name (bottom, wrapped).
+  const categoryLabel =
+    `<text x="200" y="48" font-family="Arial, Helvetica, sans-serif" font-size="18" ` +
+    `font-weight="700" letter-spacing="1" fill="${fg}" fill-opacity="0.65" ` +
+    `text-anchor="middle">${escapeXml((category || 'Product').toUpperCase())}</text>`;
+
+  const startY = 268;
+  const nameText = lines
+    .map(
+      (line, i) =>
+        `<text x="200" y="${startY + i * 30}" font-family="Arial, Helvetica, sans-serif" ` +
+        `font-size="24" font-weight="700" fill="${fg}" text-anchor="middle">${escapeXml(line)}</text>`
+    )
+    .join('');
+
   const svg =
-    `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'>` +
-    `<rect width='100%' height='100%' fill='${bg}'/>` +
-    `<text x='50%' y='50%' font-family='Arial, Helvetica, sans-serif' font-size='30' font-weight='600' ` +
-    `fill='${fg}' text-anchor='middle' dominant-baseline='middle'>${safeLabel}</text>` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">` +
+    `<rect width="400" height="400" fill="${bg}"/>` +
+    `<rect x="56" y="118" width="288" height="120" rx="20" fill="#ffffff" fill-opacity="0.55"/>` +
+    categoryLabel +
+    iconGroup +
+    nameText +
     `</svg>`;
+
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+// ─── PUBLIC API ──────────────────────────────────────────────────────────────
 export function getCategoryFallbackImage(category) {
-  const [bg, fg] = CATEGORY_PALETTE[category] || ['#eef2f7', '#94a3b8'];
-  return svgPlaceholder(category || 'Product', bg, fg);
+  return buildTile(category || 'Product', category);
 }
 
-export const GENERIC_PLACEHOLDER = svgPlaceholder('Product');
+export const GENERIC_PLACEHOLDER = buildTile('Product', 'Product');
 
-// ─── VALIDATION ──────────────────────────────────────────────────────────────
-// An image is valid for a product only when its declared category matches the
-// product's category. This is the rule that prevents unrelated-category images.
-function imageMatchesProduct(entry, product) {
-  if (!entry || !entry.url) return false;
-  if (!entry.category || !product.category) return true;
-  return String(entry.category).toLowerCase() === String(product.category).toLowerCase();
-}
-
-// ─── RESOLVER ────────────────────────────────────────────────────────────────
+/**
+ * Deterministic, always-available image for a product, derived from its
+ * name + category. Never returns a remote URL, so images can never be missing.
+ */
 export function resolveProductImage(product) {
   if (!product) return GENERIC_PLACEHOLDER;
-  const entry = PRODUCT_IMAGES[product.id];
-  if (entry && imageMatchesProduct(entry, product)) {
-    return entry.url;
-  }
-  // No valid product-specific image → category fallback (never cross-category).
-  return getCategoryFallbackImage(product.category) || GENERIC_PLACEHOLDER;
+  return buildTile(product.name, product.category);
 }
 
-export default { PRODUCT_IMAGES, resolveProductImage, getCategoryFallbackImage, GENERIC_PLACEHOLDER };
+export default { resolveProductImage, getCategoryFallbackImage, GENERIC_PLACEHOLDER };

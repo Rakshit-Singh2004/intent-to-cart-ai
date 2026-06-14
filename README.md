@@ -294,14 +294,14 @@ Switching packs instantly updates products, quantities, totals, score and order 
 
 ---
 
-### 15. Centralized Product-Image Mapping
-A single, deterministic image system guarantees every product shows a relevant, category-correct image.
+### 15. Self-Contained Product Images (Always Available)
+Product images are generated as **self-contained SVG data URIs** — there are **no external image requests**, so every product image is guaranteed to be available in any environment (online or offline) and can never be broken or missing.
 
-- **Centralized map** (`backend/src/data/productImages.js`) keys each product to a curated, category-validated image — the same product always shows the same image (no random assignment).
-- **Category validation** — an image is only used if its declared category matches the product's category, so a coffee product never shows a juice image and a protein bar never shows a personal-care image.
-- **Category fallbacks** — when no validated product image exists, a category-coloured placeholder is used (Health, Snacks, Beverages, Baby Care, Electronics, …) — never an image from an unrelated category.
-- **No broken images** — placeholders are inline SVG data URIs (zero network requests). A frontend `onError` handler swaps any failed remote image for the matching category placeholder.
-- **Performance** — static/cached mappings only; no runtime image searches.
+- **Deterministic & metadata-driven** (`backend/src/data/productImages.js`) — the image is a pure function of the product's `name` + `category`, so the same product always shows the same image.
+- **Category-themed** — each category has its own colour theme and icon (Health, Snacks, Beverages, Baby Care, Electronics, Pet Care, …), so a coffee product looks like a beverage and an electronics product looks like electronics — never an unrelated category.
+- **Always matches the product** — the product name is rendered on the tile, so the image can never mismatch the product.
+- **Zero network / instant** — no Unsplash or third-party CDN dependency; nothing to rate-limit, block, or 404.
+- **Frontend safety net** (`frontend/src/utils/productImage.js`) — an `onError` handler regenerates a matching category tile if an image element ever fails to render.
 
 ---
 
@@ -522,8 +522,8 @@ Without credentials, the fallback engine handles all 15 supported situations wit
 | Pack ↔ products sync | Separate states could drift (4 products vs 2-item pack) | `selectedPack` is single source of truth |
 | Default pack | Always Standard/primary | Intelligent: 2→Budget, 3–4→Standard, 5+→Premium |
 | Render order | Products before packs | Packs → selected-pack products → totals |
-| Product images | Random/duplicated, cross-category mismatches | Centralized, deterministic, category-validated + fallbacks |
-| Broken images | Possible | Inline SVG category placeholders, never broken |
+| Product images | Random/duplicated, cross-category mismatches | Self-contained SVG tiles: deterministic, category-themed, always available |
+| Broken/missing images | Possible (dead placeholder CDN) | Impossible — no external image requests |
 
 ---
 

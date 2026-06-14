@@ -24,7 +24,7 @@ function StoreProductCard({ product, inCart, onAdd }) {
           src={product.image}
           alt={product.name}
           loading="lazy"
-          onError={handleImageError(product.category)}
+          onError={handleImageError(product.category, product.name)}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
         />
         {discount > 0 && (
