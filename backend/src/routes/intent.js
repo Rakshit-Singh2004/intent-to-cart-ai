@@ -16,7 +16,7 @@ const router = Router();
  */
 router.post('/analyze', async (req, res, next) => {
   try {
-    const { input } = req.body;
+    const { input, skipClarification } = req.body;
 
     if (!input || input.trim().length === 0) {
       return res.status(400).json({ error: 'Please describe what you need help with' });
@@ -27,10 +27,12 @@ router.post('/analyze', async (req, res, next) => {
 
     // ── STEP 1: Subject & Situation Detection ────────────────────────────
     const subjectDetection = classifyShoppingNeed(input);
-    console.log(`🎯 Subject: ${subjectDetection.subject} | Situation: ${subjectDetection.situation} | Confidence: ${subjectDetection.confidence}`);
+    console.log(`🎯 Subject: ${subjectDetection.subject} | Situation: ${subjectDetection.situation} | Confidence: ${subjectDetection.confidence} | Multi: ${subjectDetection.multiIntent}`);
 
-    // Only ask for clarification if confidence is very low AND no situation was detected
-    if (subjectDetection.clarificationRequired) {
+    // Only ask for clarification when the request is genuinely ambiguous.
+    // skipClarification is set on a re-run after the user already answered a
+    // clarification prompt, so we never loop back into another prompt.
+    if (subjectDetection.clarificationRequired && !skipClarification) {
       return res.json({
         success: true,
         needsClarification: true,

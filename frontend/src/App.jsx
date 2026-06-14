@@ -85,14 +85,14 @@ function App() {
   }, []);
 
   // ── INTENT (SMART CART) SUBMISSION ───────────────────────────────────────
-  const handleIntentSubmit = async (input) => {
+  const handleIntentSubmit = async (input, { skipClarification = false } = {}) => {
     setUserInput(input);
     setError(null);
     setCartOpen(false);
     setCurrentView('loading');
 
     try {
-      const result = await analyzeIntent(input);
+      const result = await analyzeIntent(input, { skipClarification });
 
       if (result.needsClarification) {
         console.info('[SmartCart] Clarification needed for:', input);
@@ -193,10 +193,13 @@ function App() {
   const handleClarificationSubmit = async (answer) => {
     if (!userInput) return;
     // Map the short clarification label to concrete keywords so the re-run
-    // resolves to a real situation and always produces a Smart Cart (no dead-end).
+    // resolves to a real situation and always produces a Smart Cart. The
+    // skipClarification flag is a safety net: even if an option can't be mapped
+    // to a known situation, the re-run still generates a cart (no dead-end).
     const mapped = CLARIFICATION_KEYWORDS[answer] || answer;
+    console.info('[SmartCart] Clarification selected:', answer, '->', mapped);
     setClarification(null);
-    await handleIntentSubmit(`${userInput}. I need ${mapped}.`);
+    await handleIntentSubmit(`${userInput}. I need ${mapped}.`, { skipClarification: true });
   };
 
   // Header search submit (plain product search) sends us to the storefront

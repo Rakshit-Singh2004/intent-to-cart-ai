@@ -4,11 +4,11 @@ const API_BASE = import.meta.env.VITE_API_URL || '/api';
  * Analyzes user intent and returns a complete cart result in one call.
  * Returns: { success, needsClarification, data }
  */
-export async function analyzeIntent(input) {
+export async function analyzeIntent(input, { skipClarification = false } = {}) {
   const response = await fetch(`${API_BASE}/intent/analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ input })
+    body: JSON.stringify({ input, skipClarification })
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
