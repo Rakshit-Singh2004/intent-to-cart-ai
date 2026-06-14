@@ -1,20 +1,138 @@
 /**
  * Centralized Product Image System
  * --------------------------------------------------------------------------
- * Images are generated as SELF-CONTAINED SVG data URIs — no external network
- * requests, so every product image is ALWAYS available (never broken) in any
- * environment, online or offline.
+ * Product images are REAL photos served from the app itself (same-origin files
+ * under `frontend/public/images/products/`). Because they are not loaded from a
+ * third-party CDN, they are always available — nothing to rate-limit, block or
+ * 404 in a restricted/offline environment.
  *
- * Each image is deterministic and metadata-driven:
- *   - Category decides the colour theme + icon (so a Health product looks like
- *     health, a Beverage like a drink, Electronics like electronics, etc.).
- *   - The product name is rendered on the tile, guaranteeing the image always
- *     matches the actual product.
+ * Resolution is deterministic and metadata-driven:
+ *   1. A curated, category-validated photo keyed by product id.
+ *   2. Otherwise a category-representative photo (so the image still matches the
+ *      product's category — never an unrelated category).
+ *   3. As a final safety net (only if a file ever fails to load), the frontend
+ *      `onError` handler swaps in a category-coloured SVG tile (see
+ *      frontend/src/utils/productImage.js). getCategoryFallbackImage() below
+ *      produces the same tile for any server-side need.
  *
- * The same product always produces the same image (pure function of metadata).
+ * The same product always resolves to the same image.
  */
 
-// ─── CATEGORY THEME (background, accent) ─────────────────────────────────────
+const IMAGE_BASE = '/images/products';
+
+// ─── PER-PRODUCT PHOTOS (image key + the category it depicts) ────────────────
+export const PRODUCT_IMAGES = {
+  // Health
+  prod_001: { key: 'thermometer', category: 'Health' },
+  prod_002: { key: 'medicine', category: 'Health' },
+  prod_003: { key: 'ors', category: 'Health' },
+  prod_005: { key: 'bandaid', category: 'Health' },
+  prod_006: { key: 'medicine', category: 'Health' },
+  prod_007: { key: 'bandaid', category: 'Health' },
+
+  // Baby Care
+  prod_004: { key: 'babycare', category: 'Baby Care' },
+
+  // Food
+  prod_010: { key: 'noodles', category: 'Food' },
+  prod_011: { key: 'bread', category: 'Food' },
+  prod_012: { key: 'eggs', category: 'Food' },
+  prod_013: { key: 'butter', category: 'Food' },
+  prod_014: { key: 'milk', category: 'Food' },
+  prod_014a: { key: 'milk', category: 'Food' },
+  prod_015: { key: 'pasta', category: 'Food' },
+  prod_016: { key: 'pastasauce', category: 'Food' },
+  prod_017: { key: 'rice', category: 'Food' },
+
+  // Dessert
+  prod_018: { key: 'icecream', category: 'Dessert' },
+  prod_019: { key: 'cake', category: 'Dessert' },
+
+  // Snacks
+  prod_019a: { key: 'popcorn', category: 'Snacks' },
+  prod_023: { key: 'chips', category: 'Snacks' },
+
+  // Party
+  prod_019b: { key: 'party', category: 'Party' },
+  prod_020: { key: 'party', category: 'Party' },
+  prod_021: { key: 'party', category: 'Party' },
+  prod_024: { key: 'candles', category: 'Party' },
+  prod_025: { key: 'party', category: 'Party' },
+  prod_031a: { key: 'party', category: 'Party' },
+
+  // Home
+  prod_019c: { key: 'tissues', category: 'Home' },
+  prod_052: { key: 'candles', category: 'Home' },
+
+  // Beverages
+  prod_022: { key: 'softdrinks', category: 'Beverages' },
+  prod_074: { key: 'coffee', category: 'Beverages' },
+  prod_075: { key: 'softdrinks', category: 'Beverages' },
+  prod_075a: { key: 'proteinbar', category: 'Beverages' },
+
+  // Pet Care
+  prod_023a: { key: 'pet', category: 'Pet Care' },
+  prod_023b: { key: 'pet', category: 'Pet Care' },
+  prod_023c: { key: 'pet', category: 'Pet Care' },
+  prod_023d: { key: 'pet', category: 'Pet Care' },
+  prod_080: { key: 'pet', category: 'Pet Care' },
+  prod_081: { key: 'pet', category: 'Pet Care' },
+  prod_082: { key: 'pet', category: 'Pet Care' },
+
+  // Cleaning
+  prod_030: { key: 'cleaning', category: 'Cleaning' },
+  prod_031: { key: 'cleaning', category: 'Cleaning' },
+  prod_032: { key: 'cleaning', category: 'Cleaning' },
+  prod_033: { key: 'cleaning', category: 'Cleaning' },
+
+  // Personal Care
+  prod_040: { key: 'personalcare', category: 'Personal Care' },
+  prod_041: { key: 'towel', category: 'Personal Care' },
+  prod_042: { key: 'personalcare', category: 'Personal Care' },
+  prod_043: { key: 'personalcare', category: 'Personal Care' },
+
+  // Electronics
+  prod_050: { key: 'electronics', category: 'Electronics' },
+  prod_051: { key: 'electronics', category: 'Electronics' },
+  prod_053: { key: 'electronics', category: 'Electronics' },
+  prod_054: { key: 'electronics', category: 'Electronics' },
+  prod_054a: { key: 'electronics', category: 'Electronics' },
+
+  // Accessories
+  prod_060: { key: 'umbrella', category: 'Accessories' },
+  prod_061: { key: 'umbrella', category: 'Accessories' },
+
+  // Stationery
+  prod_070: { key: 'stationery', category: 'Stationery' },
+  prod_071: { key: 'stationery', category: 'Stationery' },
+  prod_072: { key: 'stationery', category: 'Stationery' },
+  prod_073: { key: 'stationery', category: 'Stationery' }
+};
+
+// Category-representative photo for any product without a specific entry, so the
+// image still matches the product's category (never an unrelated category).
+const CATEGORY_DEFAULT_KEY = {
+  Health: 'medicine',
+  'Baby Care': 'babycare',
+  Food: 'bread',
+  Dessert: 'cake',
+  Snacks: 'chips',
+  Beverages: 'softdrinks',
+  Party: 'party',
+  Home: 'tissues',
+  'Pet Care': 'pet',
+  Cleaning: 'cleaning',
+  'Personal Care': 'personalcare',
+  Electronics: 'electronics',
+  Accessories: 'umbrella',
+  Stationery: 'stationery'
+};
+
+function photoUrl(key) {
+  return `${IMAGE_BASE}/${key}.jpg`;
+}
+
+// ─── SVG TILE FALLBACK (theme + icon + label) ────────────────────────────────
 const CATEGORY_PALETTE = {
   Health: ['#e7f5ec', '#1f8a4c'],
   'Baby Care': ['#fdeef5', '#c2557f'],
@@ -32,42 +150,6 @@ const CATEGORY_PALETTE = {
   Stationery: ['#fdf2e6', '#bf7a1e']
 };
 
-// ─── CATEGORY ICONS (24x24 stroke paths, drawn in the accent colour) ─────────
-const DEFAULT_ICON =
-  '<path d="m7.5 4.3 9 5.1"/><path d="M21 8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>';
-
-const CATEGORY_ICONS = {
-  Health:
-    '<path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/>',
-  'Baby Care':
-    '<path d="M8 2h8"/><path d="M9 2v2.8a4 4 0 0 1-.7 2.2l-.6 1A4 4 0 0 0 7 10.2V20a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-9.8a4 4 0 0 0-.7-2.2l-.6-1A4 4 0 0 1 15 4.8V2"/><path d="M7 15a6.5 6.5 0 0 1 5 0 6.5 6.5 0 0 0 5 0"/>',
-  Food:
-    '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
-  Dessert:
-    '<path d="m7 11 4.08 10.35a1 1 0 0 0 1.84 0L17 11"/><path d="M17 7A5 5 0 0 0 7 7"/><path d="M17 7a2 2 0 0 1 0 4H7a2 2 0 0 1 0-4"/>',
-  Snacks:
-    '<path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><path d="M8.5 8.5v.01"/><path d="M16 15.5v.01"/><path d="M12 12v.01"/><path d="M11 17v.01"/><path d="M7 14v.01"/>',
-  Beverages:
-    '<path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" x2="6" y1="2" y2="4"/><line x1="10" x2="10" y1="2" y2="4"/><line x1="14" x2="14" y1="2" y2="4"/>',
-  Party:
-    '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C9 3 12 5 12 8c0-3 3-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
-  Home:
-    '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
-  'Pet Care':
-    '<circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.8 1Q6.5 17.5 4.5 16.8A3.5 3.5 0 0 1 5.5 10Z"/>',
-  Cleaning:
-    '<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C4 11.1 3 13 3 15a7 7 0 0 0 7 7z"/>',
-  'Personal Care':
-    '<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C4 11.1 3 13 3 15a7 7 0 0 0 7 7z"/>',
-  Electronics:
-    '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
-  Accessories:
-    '<path d="M22 12a10.06 10.06 0 0 0-20 0Z"/><path d="M12 12v8a2 2 0 0 0 4 0"/><path d="M12 2v1"/>',
-  Stationery:
-    '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>'
-};
-
-// ─── TEXT HELPERS ────────────────────────────────────────────────────────────
 function escapeXml(value) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -77,87 +159,37 @@ function escapeXml(value) {
     .replace(/'/g, '&#39;');
 }
 
-// Wrap a product name into up to 3 centered lines (~17 chars each).
-function wrapName(name, maxChars = 17, maxLines = 3) {
-  const words = String(name || 'Product').split(/\s+/);
-  const lines = [];
-  let current = '';
-  for (const word of words) {
-    if (!current) {
-      current = word;
-    } else if ((current + ' ' + word).length <= maxChars) {
-      current += ' ' + word;
-    } else {
-      lines.push(current);
-      current = word;
-    }
-    if (lines.length === maxLines) break;
-  }
-  if (current && lines.length < maxLines) lines.push(current);
-  if (lines.length === maxLines) {
-    // Trim the last line and add an ellipsis if the name was longer.
-    const consumed = lines.join(' ').length;
-    if (consumed < String(name).length) {
-      let last = lines[maxLines - 1];
-      if (last.length > maxChars - 1) last = last.slice(0, maxChars - 1);
-      lines[maxLines - 1] = last + '…';
-    }
-  }
-  return lines;
-}
-
-// ─── TILE BUILDER ────────────────────────────────────────────────────────────
-function buildTile(name, category) {
+function svgTile(label, category) {
   const [bg, fg] = CATEGORY_PALETTE[category] || ['#eef2f7', '#64748b'];
-  const icon = CATEGORY_ICONS[category] || DEFAULT_ICON;
-  const lines = wrapName(name);
-
-  // Icon: 24x24 path, scaled ~5x (120px), horizontally centered, upper area.
-  const iconGroup =
-    `<g transform="translate(140,86) scale(5)" fill="none" stroke="${fg}" ` +
-    `stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${icon}</g>`;
-
-  // Category label (top) + product name (bottom, wrapped).
-  const categoryLabel =
-    `<text x="200" y="48" font-family="Arial, Helvetica, sans-serif" font-size="18" ` +
-    `font-weight="700" letter-spacing="1" fill="${fg}" fill-opacity="0.65" ` +
-    `text-anchor="middle">${escapeXml((category || 'Product').toUpperCase())}</text>`;
-
-  const startY = 268;
-  const nameText = lines
-    .map(
-      (line, i) =>
-        `<text x="200" y="${startY + i * 30}" font-family="Arial, Helvetica, sans-serif" ` +
-        `font-size="24" font-weight="700" fill="${fg}" text-anchor="middle">${escapeXml(line)}</text>`
-    )
-    .join('');
-
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">` +
     `<rect width="400" height="400" fill="${bg}"/>` +
-    `<rect x="56" y="118" width="288" height="120" rx="20" fill="#ffffff" fill-opacity="0.55"/>` +
-    categoryLabel +
-    iconGroup +
-    nameText +
-    `</svg>`;
-
+    `<text x="200" y="200" font-family="Arial, Helvetica, sans-serif" font-size="26" ` +
+    `font-weight="700" fill="${fg}" text-anchor="middle" dominant-baseline="middle">` +
+    `${escapeXml(label || category || 'Product')}</text></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-// ─── PUBLIC API ──────────────────────────────────────────────────────────────
 export function getCategoryFallbackImage(category) {
-  return buildTile(category || 'Product', category);
+  return svgTile(category, category);
 }
 
-export const GENERIC_PLACEHOLDER = buildTile('Product', 'Product');
+export const GENERIC_PLACEHOLDER = svgTile('Product', 'Product');
 
-/**
- * Deterministic, always-available image for a product, derived from its
- * name + category. Never returns a remote URL, so images can never be missing.
- */
+// ─── RESOLVER ────────────────────────────────────────────────────────────────
 export function resolveProductImage(product) {
   if (!product) return GENERIC_PLACEHOLDER;
-  return buildTile(product.name, product.category);
+
+  const entry = PRODUCT_IMAGES[product.id];
+  if (entry && (!product.category || entry.category === product.category)) {
+    return photoUrl(entry.key);
+  }
+
+  const categoryKey = CATEGORY_DEFAULT_KEY[product.category];
+  if (categoryKey) return photoUrl(categoryKey);
+
+  // No photo available for this category → SVG fallback (never cross-category).
+  return getCategoryFallbackImage(product.category);
 }
 
-export default { resolveProductImage, getCategoryFallbackImage, GENERIC_PLACEHOLDER };
+export default { PRODUCT_IMAGES, resolveProductImage, getCategoryFallbackImage, GENERIC_PLACEHOLDER };

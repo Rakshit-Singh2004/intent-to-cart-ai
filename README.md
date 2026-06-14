@@ -294,14 +294,13 @@ Switching packs instantly updates products, quantities, totals, score and order 
 
 ---
 
-### 15. Self-Contained Product Images (Always Available)
-Product images are generated as **self-contained SVG data URIs** — there are **no external image requests**, so every product image is guaranteed to be available in any environment (online or offline) and can never be broken or missing.
+### 15. Real Product Images, Served Locally (Always Available)
+Product images are **real photos bundled with the app** under `frontend/public/images/products/`, referenced by relative paths (e.g. `/images/products/coffee.jpg`). Because they are served same-origin — **not** from a third-party CDN — they always load in any environment and can never be rate-limited, blocked, or 404'd.
 
-- **Deterministic & metadata-driven** (`backend/src/data/productImages.js`) — the image is a pure function of the product's `name` + `category`, so the same product always shows the same image.
-- **Category-themed** — each category has its own colour theme and icon (Health, Snacks, Beverages, Baby Care, Electronics, Pet Care, …), so a coffee product looks like a beverage and an electronics product looks like electronics — never an unrelated category.
-- **Always matches the product** — the product name is rendered on the tile, so the image can never mismatch the product.
-- **Zero network / instant** — no Unsplash or third-party CDN dependency; nothing to rate-limit, block, or 404.
-- **Frontend safety net** (`frontend/src/utils/productImage.js`) — an `onError` handler regenerates a matching category tile if an image element ever fails to render.
+- **Deterministic & metadata-driven** (`backend/src/data/productImages.js`) — each product id maps to a curated, category-validated photo; the same product always shows the same image.
+- **Category-correct** — every photo is validated against the product's category; products without a specific photo fall back to a category-representative photo (never an unrelated category).
+- **SVG safety net** (`frontend/src/utils/productImage.js`) — if an image element ever fails to load, an `onError` handler swaps in a category-coloured SVG tile, so an image is never broken.
+- **No runtime image searches** — static local files only.
 
 ---
 
@@ -522,8 +521,8 @@ Without credentials, the fallback engine handles all 15 supported situations wit
 | Pack ↔ products sync | Separate states could drift (4 products vs 2-item pack) | `selectedPack` is single source of truth |
 | Default pack | Always Standard/primary | Intelligent: 2→Budget, 3–4→Standard, 5+→Premium |
 | Render order | Products before packs | Packs → selected-pack products → totals |
-| Product images | Random/duplicated, cross-category mismatches | Self-contained SVG tiles: deterministic, category-themed, always available |
-| Broken/missing images | Possible (dead placeholder CDN) | Impossible — no external image requests |
+| Product images | Random/duplicated, cross-category mismatches | Real photos bundled locally: deterministic, category-validated, always available |
+| Broken/missing images | Possible (dead placeholder CDN) | Impossible — same-origin local files + SVG `onError` safety net |
 
 ---
 
