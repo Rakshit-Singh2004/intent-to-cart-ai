@@ -1,7 +1,9 @@
-# Intent-to-Cart AI — V3
+# Intent-to-Cart AI — V3.1
 
 > Turn real-life situations into ready-to-checkout carts in seconds.
 > No searching. No browsing. No comparing. Just describe the situation.
+
+> **What's new in V3.1:** confidence-based intent detection (obvious requests skip clarification), multi-intent combined carts, a single-source-of-truth pack architecture (the selected pack drives all rendering and totals), and a centralized, deterministic product-image mapping system.
 
 ---
 
@@ -12,13 +14,15 @@
 ```
 Describe Situation
        ↓
-AI Detects Subject + Situation
+AI Detects Subject + Situation(s)   (confidence-scored; clarifies only if truly vague)
        ↓
-AI Builds Category-Validated Cart
-       ↓
-AI Optimizes Cart (Dynamic Scoring)
+AI Builds Category-Validated Cart   (supports multiple intents → one combined cart)
        ↓
 AI Generates Budget / Standard / Premium Packs
+       ↓
+Selected Pack Drives Products, Totals & Score   (single source of truth)
+       ↓
+AI Optimizes Cart (Dynamic Scoring)
        ↓
 User Reviews — Edits Optional
        ↓
@@ -39,6 +43,9 @@ Checkout → Order Confirmation → Delivery Tracking
 | "Movie night snacks needed" | Self | Movie Night | Entertainment Essentials |
 | "It's raining and I need to go out" | Self | Rainy Day | Rain Preparedness |
 | "Gym session done, need recovery" | Self | Gym Recovery | Recovery Reset |
+| "Fever needs medicine" | Self | Medicine Run | Medicine & Fever Relief |
+| "Need snacks" | Self | Snack Run | Snack Stock-Up |
+| "Need snacks and medicine" | Self | Snack Run **&** Medicine Run | Combined Essentials |
 
 ---
 
@@ -60,7 +67,7 @@ Subject detection uses specificity-weighted keyword scoring — longer, more spe
 ---
 
 ### 2. Situation Detection Engine
-Classifies the exact real-world scenario from 13 supported situations.
+Classifies the exact real-world scenario from 15 supported situations.
 
 | Situation | Mission Name |
 |-----------|-------------|
@@ -68,9 +75,11 @@ Classifies the exact real-world scenario from 13 supported situations.
 | Guest Arrival | Guest Welcome |
 | House Party | Quick Guest Preparation |
 | Movie Night | Entertainment Essentials |
+| Snack Run | Snack Stock-Up |
 | Study Session | Exam Preparation |
 | Rainy Day | Rain Preparedness |
 | Baby Care | Baby Care Emergency |
+| Medicine Run | Medicine & Fever Relief |
 | First Aid | First Aid Response |
 | Power Cut | Emergency Lighting |
 | Gym Recovery | Recovery Reset |
@@ -79,6 +88,29 @@ Classifies the exact real-world scenario from 13 supported situations.
 | Grocery Refill | Household Refill |
 
 The situation `General` is never used. Every input maps to one of the above.
+
+#### Confidence-Based Clarification
+Clarification is requested **only when a request is genuinely ambiguous** (no situation keyword is detected, e.g. *"I need something"*, *"get me essentials"*). Obvious requests skip clarification entirely and generate a cart directly:
+
+```
+"fever needs medicine"  →  Medicine Run   (no clarification)
+"need snacks"           →  Snack Run      (no clarification)
+"baby diapers"          →  Baby Care      (no clarification)
+"I need something"      →  Clarification prompt shown
+```
+
+When a clarification option (Work / Food / Health / Comfort, etc.) **is** shown and clicked, the selected value is mapped to concrete keywords, merged with the original query, and the full Smart Cart pipeline re-runs automatically — so the flow never dead-ends after a button click.
+
+#### Multi-Intent Combined Carts
+A single request can contain more than one need. Both are detected and merged into **one** combined cart spanning every detected category — the user is never forced to pick just one.
+
+```
+"need snacks and medicine"
+   → Detected: Snack Run (Food) + Medicine Run (Health)
+   → One cart: Chips, Popcorn, Soft Drinks, Paracetamol, ORS ...
+```
+
+> Baby requests (e.g. *"my baby has a fever and needs medicine"*) intentionally resolve to a single **Baby Care** cart rather than splitting, since baby care already spans health + hygiene.
 
 ---
 
@@ -245,7 +277,33 @@ Delivery Timeline (demo simulation):
 
 ---
 
-## Tech Stack
+### 14. Single-Source-of-Truth Pack Architecture
+The **selected pack is the single source of truth** for the entire results view. Displayed products, quantities, totals, scores and the order summary are all derived from `selectedPack.products` — there is no separate "generated products" state that can drift out of sync.
+
+Rendering order reflects this: **AI Understanding → Shopping Packs → Selected Pack Products → Cart Optimization → Order Summary.**
+
+**Intelligent default pack selection** (based on how many products the AI generated):
+
+| Generated Products | Auto-Selected Pack |
+|--------------------|--------------------|
+| 2 | Budget Pack |
+| 3–4 | Standard Pack |
+| 5+ | Premium Pack |
+
+Switching packs instantly updates products, quantities, totals, score and order summary — no page refresh. The Products section, totals, and checkout total always match the selected pack exactly.
+
+---
+
+### 15. Centralized Product-Image Mapping
+A single, deterministic image system guarantees every product shows a relevant, category-correct image.
+
+- **Centralized map** (`backend/src/data/productImages.js`) keys each product to a curated, category-validated image — the same product always shows the same image (no random assignment).
+- **Category validation** — an image is only used if its declared category matches the product's category, so a coffee product never shows a juice image and a protein bar never shows a personal-care image.
+- **Category fallbacks** — when no validated product image exists, a category-coloured placeholder is used (Health, Snacks, Beverages, Baby Care, Electronics, …) — never an image from an unrelated category.
+- **No broken images** — placeholders are inline SVG data URIs (zero network requests). A frontend `onError` handler swaps any failed remote image for the matching category placeholder.
+- **Performance** — static/cached mappings only; no runtime image searches.
+
+---
 
 | Layer | Technology |
 |-------|-----------|
@@ -264,8 +322,9 @@ intent-to-cart-ai/
 ├── backend/
 │   └── src/
 │       ├── data/
-│       │   ├── productCatalog.js          # 80+ products across all categories
-│       │   ├── zeroDecisionPacks.js       # 13 scenarios × 3 tiers (Budget/Standard/Premium)
+│       │   ├── productCatalog.js          # Product catalog across all categories
+│       │   ├── productImages.js           # Centralized deterministic image mapping + category fallbacks
+│       │   ├── zeroDecisionPacks.js       # 15 scenarios × 3 tiers (Budget/Standard/Premium)
 │       │   └── optimizationMockData.js    # Mock inventory & delivery profiles
 │       ├── routes/
 │       │   ├── intent.js                  # POST /api/intent/analyze (main pipeline)
@@ -300,8 +359,9 @@ intent-to-cart-ai/
 │       │   └── Header.jsx                 # App header
 │       ├── utils/
 │       │   ├── api.js                     # Backend API calls
+│       │   ├── productImage.js            # Category-fallback image helper (onError handling)
 │       │   └── cartReactive.js            # Reactive score + health recalculation
-│       └── App.jsx                        # Main app orchestrator
+│       └── App.jsx                        # Main app orchestrator (clarification → re-run pipeline)
 │
 ├── docs/
 │   └── zero-decision-engine.md
@@ -356,7 +416,7 @@ AWS_REGION=us-east-1
 BEDROCK_MODEL_ID=anthropic.claude-3-sonnet-20240229-v1:0
 ```
 
-Without credentials, the fallback engine handles all 13 supported situations with accurate, category-correct recommendations.
+Without credentials, the fallback engine handles all 15 supported situations with accurate, category-correct recommendations.
 
 ---
 
@@ -448,6 +508,22 @@ Without credentials, the fallback engine handles all 13 supported situations wit
 | Mission names | "Zero-Decision Shopping" | Specific per situation |
 | Replace product | Not available | Same-category replacements only |
 | Why this item? | Not available | Per-product reasoning |
+
+---
+
+## V3.1 vs V3
+
+| Area | V3 | V3.1 |
+|------|----|------|
+| Clarification | Could appear for obvious requests ("fever needs medicine") | Confidence-based — only for truly vague requests |
+| Clarification buttons | Could dead-end (nothing happened on click) | Map to keywords, merge with query, re-run full pipeline |
+| Multiple intents | "snacks and medicine" got confused | One combined cart spanning both categories |
+| Supported situations | 13 | 15 (+ Medicine Run, Snack Run) |
+| Pack ↔ products sync | Separate states could drift (4 products vs 2-item pack) | `selectedPack` is single source of truth |
+| Default pack | Always Standard/primary | Intelligent: 2→Budget, 3–4→Standard, 5+→Premium |
+| Render order | Products before packs | Packs → selected-pack products → totals |
+| Product images | Random/duplicated, cross-category mismatches | Centralized, deterministic, category-validated + fallbacks |
+| Broken images | Possible | Inline SVG category placeholders, never broken |
 
 ---
 

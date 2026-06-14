@@ -1,11 +1,23 @@
 /**
- * Subject & Situation Detection Engine - V3
- * Runs before all other processing to determine WHO and WHAT the request is for.
- * Uses longest-match-first to prevent "i need" matching Self before Pet/Baby.
+ * Subject & Situation Detection Engine - V3.1
+ *
+ * Responsibilities:
+ *  - Detect WHO the request is for (subject).
+ *  - Detect WHAT is needed (one or more situations).
+ *  - Support MULTIPLE intents in a single request (e.g. "snacks and medicine").
+ *  - Decide, with confidence, whether the request is truly ambiguous and needs
+ *    a clarification prompt — obvious requests never ask for clarification.
+ *
+ * Key rules:
+ *  - Clarification is only requested when NO situation keyword is detected
+ *    (i.e. the request is genuinely vague like "I need something").
+ *  - When two distinct domains are detected (e.g. Food + Health), both are
+ *    returned as `topics` so a single combined cart can be generated.
+ *  - Baby requests always resolve to Baby Care (they imply health + hygiene),
+ *    so "my baby has a fever and needs medicine" is NOT treated as multi-intent.
  */
 
 // ─── SUBJECT PATTERNS ───────────────────────────────────────────────────────
-// Ordered from most-specific to least-specific so precise keywords win.
 const SUBJECT_PATTERNS = [
   {
     subject: 'Pet',
@@ -17,278 +29,323 @@ const SUBJECT_PATTERNS = [
       'for dog', 'for cat', 'for pet', 'for puppy', 'for kitten',
       'dog', 'cat', 'puppy', 'kitten', 'pet'
     ],
-    petType: null, // resolved after match
+    petType: null,
     category: 'Pet Supplies',
     situation: 'Pet Food Refill',
     allowedCategories: ['Pet Care'],
-    clarification: {
-      question: 'What does your pet need?',
-      options: ['Food', 'Treats', 'Toys', 'Grooming']
-    }
+    clarification: { question: 'What does your pet need?', options: ['Food', 'Treats', 'Toys', 'Grooming'] }
   },
   {
     subject: 'Baby',
     keywords: [
       'my baby', 'the baby', 'baby has', 'baby needs', 'baby fever', 'baby sick',
-      'newborn', 'infant', 'toddler',
-      'baby'
+      'newborn', 'infant', 'toddler', 'diaper', 'diapers', 'baby'
     ],
     petType: null,
-    category: 'Health Essentials',
+    category: 'Baby Care',
     situation: 'Baby Care',
     allowedCategories: ['Health', 'Baby Care'],
-    clarification: {
-      question: 'What does the baby need?',
-      options: ['Medicine', 'Diapers', 'Feeding', 'Hygiene']
-    }
+    clarification: { question: 'What does the baby need?', options: ['Medicine', 'Diapers', 'Feeding', 'Hygiene'] }
   },
   {
     subject: 'Guest',
     keywords: [
       'friends coming', 'guests coming', 'guests arriving', 'friends arriving',
       'someone staying', 'staying over', 'overnight guest', 'house party',
-      'guest coming', 'visitor coming',
-      'guest', 'guests', 'visitor', 'visitors'
+      'guest coming', 'visitor coming', 'guest', 'guests', 'visitor', 'visitors'
     ],
     petType: null,
     category: 'Hosting Essentials',
     situation: 'Guest Arrival',
     allowedCategories: ['Party', 'Beverages', 'Snacks', 'Personal Care'],
-    clarification: {
-      question: 'What do your guests need?',
-      options: ['Snacks', 'Drinks', 'Serving Items', 'Toiletries']
-    }
+    clarification: { question: 'What do your guests need?', options: ['Snacks', 'Drinks', 'Serving Items', 'Toiletries'] }
   },
   {
     subject: 'Child',
     keywords: [
       'my child', 'my kid', 'my son', 'my daughter', 'school age',
-      'child needs', 'kid needs',
-      'child', 'kid', 'kids'
+      'child needs', 'kid needs', 'child', 'kid', 'kids'
     ],
     petType: null,
     category: 'Child Care',
     situation: 'Study Session',
     allowedCategories: ['Stationery', 'Beverages', 'Food', 'Personal Care'],
-    clarification: {
-      question: 'What does your child need?',
-      options: ['Food', 'Study Supplies', 'Hygiene', 'Medicine']
-    }
+    clarification: { question: 'What does your child need?', options: ['Food', 'Study Supplies', 'Hygiene', 'Medicine'] }
   },
   {
     subject: 'Family',
     keywords: [
       'for my family', 'whole family', 'everyone at home', 'family needs',
-      'parents need', 'my family',
-      'family'
+      'parents need', 'my family', 'family'
     ],
     petType: null,
     category: 'Household Essentials',
     situation: 'Grocery Refill',
     allowedCategories: ['Food', 'Cleaning', 'Personal Care', 'Health'],
-    clarification: {
-      question: 'What does your family need?',
-      options: ['Groceries', 'Cleaning', 'Cooking', 'Medicine']
-    }
+    clarification: { question: 'What does your family need?', options: ['Groceries', 'Cleaning', 'Cooking', 'Medicine'] }
   },
   {
     subject: 'Self',
     keywords: [
       'i have fever', 'i am sick', 'i hurt', 'i need', 'i want',
-      'for me', 'my study', 'my work', 'my office',
-      'i'
+      'for me', 'my study', 'my work', 'my office', 'i'
     ],
     petType: null,
     category: 'Personal Essentials',
     situation: 'Office Essentials',
     allowedCategories: ['Stationery', 'Beverages', 'Food', 'Personal Care'],
-    clarification: {
-      question: 'What do you need?',
-      options: ['Work', 'Food', 'Health', 'Comfort']
-    }
+    clarification: { question: 'What do you need?', options: ['Work', 'Food', 'Health', 'Comfort'] }
   }
 ];
 
 // ─── SITUATION PATTERNS ──────────────────────────────────────────────────────
-// Ordered most-specific first. Each situation carries its allowed product categories.
+// Each pattern carries:
+//   scenarioKey      - maps to the zero-decision pack catalog
+//   domain           - high-level area used for multi-intent detection
+//   allowedCategories- categories products may come from
+// Ordered most-specific first.
 const SITUATION_PATTERNS = [
   {
-    situation: 'Pet Food Refill',
-    missionName: 'Pet Care Refill',
+    situation: 'Pet Food Refill', missionName: 'Pet Care Refill',
+    scenarioKey: 'pet_food_refill', domain: 'pet', allowedCategories: ['Pet Care'],
     keywords: ['ran out of dog food', 'out of dog food', 'ran out of cat food', 'out of cat food',
-               'dog food finished', 'cat food finished', 'no dog food', 'no cat food',
-               'need dog food', 'need cat food', 'dog food', 'cat food', 'pet food'],
-    allowedCategories: ['Pet Care']
+      'dog food finished', 'cat food finished', 'no dog food', 'no cat food',
+      'need dog food', 'need cat food', 'dog food', 'cat food', 'pet food',
+      'dog treats', 'cat treats', 'pet treats', 'dog', 'cat', 'puppy', 'kitten', 'pet']
   },
   {
-    situation: 'Study Session',
-    missionName: 'Exam Preparation',
-    keywords: ['exam tomorrow', 'study session', 'study for exam', 'exam preparation',
-               'homework deadline', 'assignment due', 'late night study', 'all night study',
-               'exam', 'study', 'homework', 'assignment'],
-    allowedCategories: ['Stationery', 'Beverages', 'Food']
-  },
-  {
-    situation: 'House Party',
-    missionName: 'Quick Guest Preparation',
-    keywords: ['house party tonight', 'birthday party', 'throwing a party', 'having a party',
-               'party tonight', 'birthday celebration', 'house party'],
-    allowedCategories: ['Party', 'Beverages', 'Snacks', 'Dessert']
-  },
-  {
-    situation: 'Movie Night',
-    missionName: 'Entertainment Essentials',
-    keywords: ['movie night', 'watch movies', 'watching movies', 'home theater', 'binge watch'],
-    allowedCategories: ['Snacks', 'Beverages', 'Dessert']
-  },
-  {
-    situation: 'Rainy Day',
-    missionName: 'Rain Preparedness',
-    keywords: ['it is raining', 'it\'s raining', 'caught in rain', 'heavy rain', 'stuck in rain',
-               'raining outside', 'rainy day', 'rain started', 'rain', 'raining', 'wet outside', 'storm'],
-    allowedCategories: ['Accessories', 'Beverages', 'Personal Care']
-  },
-  {
-    situation: 'Baby Care',
-    missionName: 'Baby Care Emergency',
+    situation: 'Baby Care', missionName: 'Baby Care Emergency',
+    scenarioKey: 'baby_care', domain: 'baby', allowedCategories: ['Health', 'Baby Care'],
     keywords: ['baby has fever', 'baby is sick', 'baby needs medicine', 'infant fever',
-               'toddler sick', 'baby care emergency', 'baby fever', 'baby sick', 'baby'],
-    allowedCategories: ['Health', 'Baby Care']
+      'toddler sick', 'baby care emergency', 'baby fever', 'baby sick',
+      'diapers', 'diaper', 'baby', 'infant', 'newborn', 'toddler']
   },
   {
-    situation: 'First Aid',
-    missionName: 'First Aid Response',
-    keywords: ['bleeding', 'cut myself', 'injured myself', 'wound on', 'deep cut',
-               'wound', 'cut', 'injury', 'hurt', 'first aid'],
-    allowedCategories: ['Health']
+    situation: 'Study Session', missionName: 'Exam Preparation',
+    scenarioKey: 'exam_tomorrow', domain: 'work', allowedCategories: ['Stationery', 'Beverages', 'Food'],
+    keywords: ['exam tomorrow', 'study session', 'study for exam', 'exam preparation',
+      'homework deadline', 'assignment due', 'late night study', 'all night study',
+      'exam', 'study', 'homework', 'assignment']
   },
   {
-    situation: 'Power Cut',
-    missionName: 'Emergency Lighting',
+    situation: 'House Party', missionName: 'Quick Guest Preparation',
+    scenarioKey: 'house_party', domain: 'party', allowedCategories: ['Party', 'Beverages', 'Snacks', 'Dessert'],
+    keywords: ['house party tonight', 'birthday party', 'throwing a party', 'having a party',
+      'party tonight', 'birthday celebration', 'house party']
+  },
+  {
+    situation: 'Movie Night', missionName: 'Entertainment Essentials',
+    scenarioKey: 'movie_night', domain: 'food', allowedCategories: ['Snacks', 'Beverages', 'Dessert'],
+    keywords: ['movie night', 'watch movies', 'watching movies', 'home theater', 'binge watch', 'movie']
+  },
+  {
+    situation: 'Snack Run', missionName: 'Snack Stock-Up',
+    scenarioKey: 'snack_run', domain: 'food', allowedCategories: ['Snacks', 'Beverages', 'Dessert'],
+    keywords: ['need snacks', 'want snacks', 'snacks and drinks', 'something to munch',
+      'snacks', 'snack', 'chips', 'munchies', 'nachos', 'popcorn', 'soft drinks', 'cold drink', 'juice']
+  },
+  {
+    situation: 'Rainy Day', missionName: 'Rain Preparedness',
+    scenarioKey: 'rainy_day', domain: 'weather', allowedCategories: ['Accessories', 'Beverages', 'Personal Care'],
+    keywords: ['it is raining', "it's raining", 'caught in rain', 'heavy rain', 'stuck in rain',
+      'raining outside', 'rainy day', 'rain started', 'rain', 'raining', 'wet outside', 'storm', 'umbrella']
+  },
+  {
+    situation: 'Medicine Run', missionName: 'Medicine & Fever Relief',
+    scenarioKey: 'medicine_run', domain: 'health', allowedCategories: ['Health'],
+    keywords: ['needs medicine', 'need medicine', 'fever and cold', 'cold and cough', 'sore throat',
+      'body ache', 'medicine', 'medicines', 'fever', 'sick', 'illness', 'ill', 'cough', 'cold',
+      'flu', 'headache', 'pain', 'paracetamol', 'tablet', 'tablets', 'ors', 'temperature', 'nausea']
+  },
+  {
+    situation: 'First Aid', missionName: 'First Aid Response',
+    scenarioKey: 'first_aid', domain: 'health', allowedCategories: ['Health'],
+    keywords: ['cut myself', 'injured myself', 'wound on', 'deep cut', 'cut my finger',
+      'bleeding', 'wound', 'cut', 'injury', 'first aid', 'bandage', 'band-aid', 'antiseptic']
+  },
+  {
+    situation: 'Power Cut', missionName: 'Emergency Lighting',
+    scenarioKey: 'power_cut', domain: 'power', allowedCategories: ['Electronics', 'Home'],
     keywords: ['power cut', 'power outage', 'no electricity', 'electricity gone',
-               'lights went out', 'blackout', 'dark at home'],
-    allowedCategories: ['Electronics', 'Home']
+      'lights went out', 'blackout', 'dark at home', 'candles', 'flashlight']
   },
   {
-    situation: 'Gym Recovery',
-    missionName: 'Recovery Reset',
+    situation: 'Gym Recovery', missionName: 'Recovery Reset',
+    scenarioKey: 'gym_recovery', domain: 'gym', allowedCategories: ['Beverages', 'Food', 'Health'],
     keywords: ['post workout', 'after gym', 'gym recovery', 'workout recovery',
-               'after workout', 'gym session ended', 'gym', 'workout', 'protein'],
-    allowedCategories: ['Beverages', 'Food', 'Health']
+      'after workout', 'gym session ended', 'gym', 'workout', 'protein']
   },
   {
-    situation: 'Road Trip',
-    missionName: 'Travel Essentials',
+    situation: 'Road Trip', missionName: 'Travel Essentials',
+    scenarioKey: 'road_trip', domain: 'travel', allowedCategories: ['Snacks', 'Beverages', 'Electronics', 'Accessories'],
     keywords: ['going on road trip', 'road trip tomorrow', 'long drive', 'car journey',
-               'road trip', 'travel', 'trip', 'journey'],
-    allowedCategories: ['Snacks', 'Beverages', 'Electronics', 'Accessories']
+      'road trip', 'travel', 'trip', 'journey']
   },
   {
-    situation: 'Guest Arrival',
-    missionName: 'Guest Welcome',
+    situation: 'Guest Arrival', missionName: 'Guest Welcome',
+    scenarioKey: 'guest_arrival', domain: 'party', allowedCategories: ['Party', 'Beverages', 'Personal Care'],
     keywords: ['guests coming over', 'friends coming over', 'visitor coming', 'guests arriving',
-               'friends arriving', 'staying overnight', 'friends coming', 'guests coming'],
-    allowedCategories: ['Party', 'Beverages', 'Personal Care']
+      'friends arriving', 'staying overnight', 'friends coming', 'guests coming', 'guest', 'guests', 'visitor']
   },
   {
-    situation: 'Office Essentials',
-    missionName: 'Office Readiness',
+    situation: 'Office Essentials', missionName: 'Office Readiness',
+    scenarioKey: 'office_essentials', domain: 'work', allowedCategories: ['Stationery', 'Beverages'],
     keywords: ['office tomorrow', 'need office supplies', 'work from office',
-               'office', 'work supplies', 'meeting supplies', 'stationery', 'desk supplies'],
-    allowedCategories: ['Stationery', 'Beverages']
+      'office', 'work supplies', 'meeting supplies', 'stationery', 'desk supplies', 'notebook', 'pen']
   },
   {
-    situation: 'Grocery Refill',
-    missionName: 'Household Refill',
+    situation: 'Grocery Refill', missionName: 'Household Refill',
+    scenarioKey: 'grocery_refill', domain: 'grocery', allowedCategories: ['Food'],
     keywords: ['ran out of groceries', 'grocery refill', 'out of milk', 'no bread',
-               'kitchen empty', 'groceries', 'reorder kitchen', 'grocery', 'milk', 'bread'],
-    allowedCategories: ['Food']
+      'kitchen empty', 'groceries', 'reorder kitchen', 'grocery', 'milk', 'bread', 'eggs']
   }
 ];
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
-
 function normalize(value) {
   return String(value || '').toLowerCase().trim();
 }
 
 /**
  * Score how well a text matches a list of keywords.
- * Longer keywords get higher weight. Exact phrase match gets bonus.
+ * Longer keywords get higher weight; whole-word matches for single tokens are
+ * preferred to avoid substring noise (e.g. "pet" inside "carpet").
  */
 function scoreKeywords(text, keywords) {
   let score = 0;
   for (const keyword of keywords) {
-    if (text.includes(keyword)) {
-      // Weight by keyword length: longer = more specific = more score
-      score += keyword.split(' ').length >= 3 ? 5
-             : keyword.split(' ').length === 2 ? 3
-             : 1;
+    const wordCount = keyword.split(' ').length;
+    let matched = false;
+    if (wordCount === 1) {
+      // whole-word match for single tokens
+      const re = new RegExp(`(^|[^a-z0-9])${escapeRegExp(keyword)}([^a-z0-9]|$)`, 'i');
+      matched = re.test(text);
+    } else {
+      matched = text.includes(keyword);
+    }
+    if (matched) {
+      score += wordCount >= 3 ? 5 : wordCount === 2 ? 3 : 1;
     }
   }
   return score;
 }
 
-/**
- * Detect pet type from input text.
- */
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function detectPetType(text) {
   if (text.includes('dog') || text.includes('puppy')) return 'Dog';
   if (text.includes('cat') || text.includes('kitten')) return 'Cat';
   return 'Pet';
 }
 
-// ─── MAIN CLASSIFIER ────────────────────────────────────────────────────────
+function hasBabyContext(text) {
+  return /(^|[^a-z])(baby|infant|newborn|toddler|diaper|diapers)([^a-z]|$)/i.test(text);
+}
 
+function toTopic(pattern) {
+  return {
+    situation: pattern.situation,
+    missionName: pattern.missionName,
+    scenarioKey: pattern.scenarioKey,
+    domain: pattern.domain,
+    allowedCategories: pattern.allowedCategories
+  };
+}
+
+// ─── MAIN CLASSIFIER ────────────────────────────────────────────────────────
 export function classifyShoppingNeed(input) {
   const text = normalize(input);
 
-  // Score all subject patterns
+  // Score subjects
   const scoredSubjects = SUBJECT_PATTERNS
     .map(pattern => ({ pattern, score: scoreKeywords(text, pattern.keywords) }))
     .sort((a, b) => b.score - a.score);
 
-  // Score all situation patterns
+  // Score situations (keep all that matched)
   const scoredSituations = SITUATION_PATTERNS
     .map(pattern => ({ pattern, score: scoreKeywords(text, pattern.keywords) }))
     .sort((a, b) => b.score - a.score);
 
-  const subjectMatch = scoredSubjects[0];
-  const situationMatch = scoredSituations[0];
+  const matchedSituations = scoredSituations.filter(s => s.score > 0);
+  const topSituationScore = matchedSituations[0]?.score || 0;
 
-  // Pick best subject. If no subject keyword matched at all, default to Self only
-  // when situation keywords also didn't fire strongly (avoid "dog food" → Self)
-  let chosenSubject = subjectMatch.score > 0 ? subjectMatch.pattern : SUBJECT_PATTERNS.find(p => p.subject === 'Self');
+  // ── Baby precedence ──────────────────────────────────────────────────────
+  // Baby requests imply health + hygiene; never split into a multi-intent cart.
+  const babyContext = hasBabyContext(text);
 
-  // Hard override: if situation is Pet Food Refill, subject must be Pet
-  if (situationMatch.score > 0 && situationMatch.pattern.situation === 'Pet Food Refill') {
-    chosenSubject = SUBJECT_PATTERNS.find(p => p.subject === 'Pet');
+  // ── Build topics (distinct domains, highest score per domain, top 2) ──────
+  let topics = [];
+  if (babyContext) {
+    topics = [toTopic(SITUATION_PATTERNS.find(p => p.scenarioKey === 'baby_care'))];
+  } else {
+    const seenDomains = new Map();
+    for (const { pattern } of matchedSituations) {
+      if (!seenDomains.has(pattern.domain)) seenDomains.set(pattern.domain, pattern);
+    }
+    topics = [...seenDomains.values()].slice(0, 2).map(toTopic);
   }
 
-  // Hard override: if situation is Baby Care, subject must be Baby
-  if (situationMatch.score > 0 && situationMatch.pattern.situation === 'Baby Care') {
+  const multiIntent = topics.length >= 2;
+  const primaryTopic = topics[0] || null;
+
+  // ── Resolve subject ──────────────────────────────────────────────────────
+  let chosenSubject = scoredSubjects[0].score > 0
+    ? scoredSubjects[0].pattern
+    : SUBJECT_PATTERNS.find(p => p.subject === 'Self');
+
+  if (primaryTopic?.scenarioKey === 'pet_food_refill') {
+    chosenSubject = SUBJECT_PATTERNS.find(p => p.subject === 'Pet');
+  }
+  if (babyContext || primaryTopic?.scenarioKey === 'baby_care') {
     chosenSubject = SUBJECT_PATTERNS.find(p => p.subject === 'Baby');
   }
 
-  // Resolve situation — use best match, fall back to subject's default
-  const chosenSituation = situationMatch.score > 0
-    ? situationMatch.pattern
-    : SITUATION_PATTERNS.find(s => s.situation === chosenSubject.situation) || SITUATION_PATTERNS[SITUATION_PATTERNS.length - 1];
+  // ── Resolve primary situation (fall back to subject default) ──────────────
+  const primarySituationPattern = primaryTopic
+    ? SITUATION_PATTERNS.find(p => p.scenarioKey === primaryTopic.scenarioKey)
+    : (SITUATION_PATTERNS.find(s => s.situation === chosenSubject.situation)
+        || SITUATION_PATTERNS[SITUATION_PATTERNS.length - 1]);
 
-  const confidence = Math.min(100, Math.round((subjectMatch.score * 10) + (situationMatch.score * 12)));
-  const clarificationRequired = confidence < 20 && situationMatch.score === 0;
+  // If nothing matched, the primary topic falls back to the subject default so
+  // downstream pack generation still has a scenario to work with.
+  if (topics.length === 0 && primarySituationPattern) {
+    topics = [toTopic(primarySituationPattern)];
+  }
 
-  // Resolve petType for Pet subject
+  // ── Confidence + clarification ────────────────────────────────────────────
+  // Clarification is required ONLY when the request is genuinely ambiguous:
+  // no situation keyword fired at all. Obvious requests skip clarification.
+  const subjectScore = scoredSubjects[0].score;
+  const confidence = Math.min(100, Math.round((subjectScore * 8) + (topSituationScore * 14)));
+  const clarificationRequired = topSituationScore === 0;
+
   const petType = chosenSubject.subject === 'Pet' ? detectPetType(text) : null;
+
+  // ── Build allowedCategories (union for multi-intent) ──────────────────────
+  const allowedCategories = multiIntent
+    ? [...new Set(topics.flatMap(t => t.allowedCategories))]
+    : (primarySituationPattern?.allowedCategories || chosenSubject.allowedCategories || []);
+
+  const situationLabel = multiIntent
+    ? topics.map(t => t.situation).join(' & ')
+    : (primarySituationPattern?.situation || chosenSubject.situation);
+
+  const missionName = multiIntent
+    ? 'Combined Essentials'
+    : (primarySituationPattern?.missionName || 'Quick Essentials');
 
   return {
     subject: chosenSubject.subject,
     petType,
-    category: chosenSubject.category,
-    situation: chosenSituation.situation,
-    missionName: chosenSituation.missionName,
-    allowedCategories: chosenSituation.allowedCategories || chosenSubject.allowedCategories || [],
+    category: multiIntent ? 'Mixed Essentials' : chosenSubject.category,
+    situation: situationLabel,
+    missionName,
+    allowedCategories,
     confidence,
+    multiIntent,
+    topics,
     clarificationRequired,
     clarification: clarificationRequired ? chosenSubject.clarification : null
   };

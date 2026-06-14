@@ -1,5 +1,6 @@
 import React from 'react';
 import { Star, Clock, Plus, Check } from 'lucide-react';
+import { handleImageError } from '../utils/productImage';
 
 // Deterministic pseudo-rating so each product shows a stable rating/review count
 function pseudoRating(id) {
@@ -23,7 +24,7 @@ function StoreProductCard({ product, inCart, onAdd }) {
           src={product.image}
           alt={product.name}
           loading="lazy"
-          onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/200?text=Product'; }}
+          onError={handleImageError(product.category)}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
         />
         {discount > 0 && (

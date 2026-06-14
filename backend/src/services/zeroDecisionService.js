@@ -17,8 +17,10 @@ const SITUATION_TO_SCENARIO = {
   'Study Session': 'exam_tomorrow',
   'House Party': 'house_party',
   'Movie Night': 'movie_night',
+  'Snack Run': 'snack_run',
   'Rainy Day': 'rainy_day',
   'Baby Care': 'baby_care',
+  'Medicine Run': 'medicine_run',
   'First Aid': 'first_aid',
   'Power Cut': 'power_cut',
   'Gym Recovery': 'gym_recovery',
@@ -29,7 +31,13 @@ const SITUATION_TO_SCENARIO = {
 };
 
 function getScenario(intentResult, userInput) {
-  // 1. Priority: use subject detection situation → scenario map
+  // 0. Highest priority: scenario key supplied directly by the classifier topic.
+  const topicKey = intentResult?.subjectDetection?.topics?.[0]?.scenarioKey;
+  if (topicKey && scenarioCatalog[topicKey]) {
+    return { key: topicKey, ...scenarioCatalog[topicKey] };
+  }
+
+  // 1. Use subject detection situation → scenario map.
   const detectedSituation = intentResult?.subjectDetection?.situation
     || intentResult?.intent?.situation
     || '';
@@ -236,25 +244,133 @@ function determineRecommendedPack(packs) {
 // ─── MAIN ENGINE ─────────────────────────────────────────────────────────────
 
 export function generateZeroDecisionEngine(intentResult, userInput = '') {
-  const scenario = getScenario(intentResult, userInput);
+  // Multi-intent → generate a single combined cart drawing from each topic.
+  const topics = intentResult?.subjectDetection?.topics;
+  if (Array.isArray(topics) && topics.length >= 2) {
+    return generateCombinedZeroDecision(topics, intentResult, userInput);
+  }
 
-  // Always ensure exactly 3 packs in Budget/Standard/Premium order
-  const packDefinitions = scenario.packs.slice(0, 3);
+  const scenario = getScenario(intentResult, userInput);
+  const packDefinitions = padPackDefinitions(scenario.packs.slice(0, 3), scenario.key);
+  const { packs, recommendedPackId } = assemblePacks(scenario, packDefinitions, intentResult, userInput);
+
+  return {
+    scenario: {
+      key: scenario.key,
+      label: scenario.label,
+      missionName: scenario.missionName,
+      prompt: scenario.prompt
+    },
+    packs,
+    recommended_pack_id: recommendedPackId,
+    primary_pack_id: recommendedPackId,
+    explanation: `Generated 3 zero-decision packs for ${scenario.missionName}.`
+  };
+}
+
+/**
+ * Combined (multi-intent) pack generation.
+ * For each tier, merge the item lists from every detected topic's scenario so a
+ * single pack contains products from all detected categories (e.g. Snacks +
+ * Medicine). Category validation is the union of all topic categories.
+ */
+function generateCombinedZeroDecision(topics, intentResult, userInput = '') {
+  const scenarios = topics
+    .map(t => (scenarioCatalog[t.scenarioKey] ? { key: t.scenarioKey, ...scenarioCatalog[t.scenarioKey] } : null))
+    .filter(Boolean);
+
+  if (scenarios.length < 2) {
+    // Degrade gracefully to single-scenario generation.
+    const single = scenarios[0] || { key: 'default', ...scenarioCatalog.default };
+    const defs = padPackDefinitions(single.packs.slice(0, 3), single.key);
+    const { packs, recommendedPackId } = assemblePacks(single, defs, intentResult, userInput);
+    return {
+      scenario: { key: single.key, label: single.label, missionName: single.missionName, prompt: single.prompt },
+      packs,
+      recommended_pack_id: recommendedPackId,
+      primary_pack_id: recommendedPackId,
+      explanation: `Generated 3 zero-decision packs for ${single.missionName}.`
+    };
+  }
+
+  const unionCategories = [...new Set(scenarios.flatMap(s => s.allowedCategories || []))];
+  const missionName = scenarios.map(s => s.missionName).join(' + ');
+  const label = scenarios.map(s => s.label).join(' & ');
+
+  const combinedScenario = {
+    key: 'combined',
+    label,
+    missionName,
+    allowedCategories: unionCategories,
+    prompt: `Combined pack covering ${label}.`,
+    missingEssentials: []
+  };
+
+  const TIERS = ['Budget', 'Standard', 'Premium'];
+  const combinedDefinitions = TIERS.map(tier => {
+    const mergedItems = [];
+    let targetBudget = 0;
+    for (const scenario of scenarios) {
+      const tierPack = scenario.packs.find(p => p.tier === tier) || scenario.packs[0];
+      if (tierPack) {
+        mergedItems.push(...tierPack.items);
+        targetBudget += tierPack.targetBudget || 0;
+      }
+    }
+    return {
+      id: `combined-${tier.toLowerCase()}`,
+      title: `${tier} Pack`,
+      subtitle: `${label} essentials`,
+      tier,
+      targetBudget: targetBudget || (tier === 'Budget' ? 499 : tier === 'Standard' ? 799 : 1199),
+      allowedCategories: unionCategories,
+      items: mergedItems
+    };
+  });
+
+  const { packs, recommendedPackId } = assemblePacks(combinedScenario, combinedDefinitions, intentResult, userInput);
+
+  return {
+    scenario: {
+      key: combinedScenario.key,
+      label: combinedScenario.label,
+      missionName: combinedScenario.missionName,
+      prompt: combinedScenario.prompt
+    },
+    packs,
+    recommended_pack_id: recommendedPackId,
+    primary_pack_id: recommendedPackId,
+    explanation: `Generated 3 combined packs covering ${label}.`
+  };
+}
+
+/**
+ * Ensures exactly 3 pack definitions in Budget/Standard/Premium order.
+ */
+function padPackDefinitions(definitions, scenarioKey) {
+  const packDefinitions = [...definitions];
   while (packDefinitions.length < 3) {
     const tier = packDefinitions.length === 0 ? 'Budget'
                : packDefinitions.length === 1 ? 'Standard'
                : 'Premium';
     const baseTargetBudget = tier === 'Budget' ? 399 : tier === 'Standard' ? 699 : 1199;
-    const template = scenario.packs[0];
+    const template = definitions[0] || { items: [], allowedCategories: [] };
     packDefinitions.push({
       ...template,
-      id: `${scenario.key}-${tier.toLowerCase()}`,
+      id: `${scenarioKey}-${tier.toLowerCase()}`,
       title: `${tier} Pack`,
       tier,
       targetBudget: baseTargetBudget
     });
   }
+  return packDefinitions;
+}
 
+/**
+ * Builds pack objects from definitions, enforces price ordering, and flags the
+ * recommended pack. Shared by single-intent and combined generation.
+ */
+function assemblePacks(scenario, packDefinitions, intentResult, userInput) {
   let packs = packDefinitions.map(packDefinition => {
     const optimized = buildPackProducts(packDefinition, scenario.allowedCategories, intentResult, userInput);
     const total = optimized.optimized_cart.reduce((sum, p) => sum + p.price, 0);
@@ -285,10 +401,8 @@ export function generateZeroDecisionEngine(intentResult, userInput = '') {
     };
   });
 
-  // Enforce Budget < Standard < Premium
   packs = enforcePackPriceOrdering(packs, scenario);
 
-  // Determine recommended pack
   const recommendedPack = determineRecommendedPack(packs);
   const recommendedPackId = recommendedPack?.id || packs[1]?.id || packs[0]?.id;
 
@@ -300,18 +414,7 @@ export function generateZeroDecisionEngine(intentResult, userInput = '') {
       : null
   }));
 
-  return {
-    scenario: {
-      key: scenario.key,
-      label: scenario.label,
-      missionName: scenario.missionName,
-      prompt: scenario.prompt
-    },
-    packs,
-    recommended_pack_id: recommendedPackId,
-    primary_pack_id: recommendedPackId,
-    explanation: `Generated 3 zero-decision packs for ${scenario.missionName}.`
-  };
+  return { packs, recommendedPackId };
 }
 
 function buildPackExplanation(tier, missionName, total) {

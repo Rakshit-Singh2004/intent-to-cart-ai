@@ -174,6 +174,36 @@ function fallbackIntentAnalysis(userInput, context = {}) {
     };
   }
 
+  // ── MEDICINE RUN (FEVER / COLD / GENERAL ILLNESS) ────────────────────────
+  if (subjectDetection?.situation === 'Medicine Run') {
+    return {
+      intent: { type: 'Health', urgency: 'High', subject: 'Self', situation: 'Medicine Run', emotion: 'Worried' },
+      reasoning: 'Detected a fever, cold, or general illness needing immediate medicine and hydration. Prioritizing fever relief, rehydration, and temperature monitoring.',
+      recommended_products: [
+        { name: 'Paracetamol Syrup (Kids)', reason: 'Fever and pain relief', priority: 1, tags: ['fever', 'medicine', 'paracetamol', 'pain'] },
+        { name: 'ORS Sachets (Pack of 10)', reason: 'Rehydration support during illness', priority: 1, tags: ['ors', 'hydration', 'electrolyte', 'fever'] },
+        { name: 'Digital Thermometer', reason: 'Monitor body temperature accurately', priority: 2, tags: ['fever', 'temperature', 'thermometer', 'health'] }
+      ],
+      cart_name: 'Fever & Medicine Relief Kit',
+      estimated_need_time: 'Immediately'
+    };
+  }
+
+  // ── SNACK RUN (SNACKS & DRINKS) ──────────────────────────────────────────
+  if (subjectDetection?.situation === 'Snack Run') {
+    return {
+      intent: { type: 'Food', urgency: 'Low', subject: 'Self', situation: 'Snack Run', emotion: 'Excited' },
+      reasoning: 'Detected a craving for snacks and drinks. Recommending popular snacks paired with refreshing beverages.',
+      recommended_products: [
+        { name: 'Chips (Large, Assorted)', reason: 'Crunchy snack favourite', priority: 1, tags: ['snacks', 'chips', 'munchies'] },
+        { name: 'Soft Drinks (6 Pack)', reason: 'Refreshing drinks to pair with snacks', priority: 1, tags: ['drinks', 'cold', 'soft drinks'] },
+        { name: 'Popcorn Tub', reason: 'Light, classic snacking option', priority: 2, tags: ['popcorn', 'snack'] }
+      ],
+      cart_name: 'Snack Stock-Up Kit',
+      estimated_need_time: 'Within 30 mins'
+    };
+  }
+
   // ── MOVIE NIGHT ──────────────────────────────────────────────────────────
   if (subjectDetection?.situation === 'Movie Night') {
     return {

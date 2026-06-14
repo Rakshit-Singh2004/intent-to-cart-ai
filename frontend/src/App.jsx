@@ -8,6 +8,31 @@ import OrderConfirmation from './components/OrderConfirmation';
 import LoadingSequence from './components/LoadingSequence';
 import { analyzeIntent, createCart, checkout, fetchCategories } from './utils/api';
 
+// Maps short clarification answers to concrete keywords so that selecting an
+// option always re-runs Smart Cart generation into a real, category-correct
+// scenario (prevents the "button does nothing" dead-end).
+const CLARIFICATION_KEYWORDS = {
+  Work: 'office supplies and stationery for work',
+  Food: 'snacks and drinks',
+  Health: 'medicine for fever',
+  Comfort: 'coffee and snacks for comfort',
+  Medicine: 'medicine for fever',
+  Diapers: 'baby diapers and wipes',
+  Feeding: 'baby feeding and milk',
+  Hygiene: 'baby wet wipes for hygiene',
+  Drinks: 'soft drinks',
+  Snacks: 'snacks',
+  Toys: 'pet treats and chew sticks',
+  Treats: 'pet treats and dental chews',
+  Grooming: 'pet grooming supplies',
+  'Serving Items': 'party cups and paper plates',
+  Toiletries: 'soap and shampoo toiletries',
+  'Study Supplies': 'study notebook and pen stationery',
+  Groceries: 'groceries like milk bread and eggs',
+  Cleaning: 'cleaning floor cleaner and supplies',
+  Cooking: 'cooking rice and pasta'
+};
+
 function App() {
   const [currentView, setCurrentView] = useState('home');
   const [intentResult, setIntentResult] = useState(null);
@@ -70,14 +95,21 @@ function App() {
       const result = await analyzeIntent(input);
 
       if (result.needsClarification) {
+        console.info('[SmartCart] Clarification needed for:', input);
         setClarification(result.data);
         setCurrentView('clarify');
         return;
       }
 
+      if (!result.data) {
+        throw new Error('No cart data returned from the server.');
+      }
+
+      console.info('[SmartCart] Cart generated for:', input);
       setIntentResult(result.data);
       setTimeout(() => setCurrentView('results'), 4200);
     } catch (err) {
+      console.error('[SmartCart] Failed to generate smart cart:', err);
       setError(err.message || 'Failed to analyze intent. Please try again.');
       setCurrentView('home');
     }
@@ -160,8 +192,11 @@ function App() {
 
   const handleClarificationSubmit = async (answer) => {
     if (!userInput) return;
+    // Map the short clarification label to concrete keywords so the re-run
+    // resolves to a real situation and always produces a Smart Cart (no dead-end).
+    const mapped = CLARIFICATION_KEYWORDS[answer] || answer;
     setClarification(null);
-    await handleIntentSubmit(`${userInput}. ${answer}`);
+    await handleIntentSubmit(`${userInput}. I need ${mapped}.`);
   };
 
   // Header search submit (plain product search) sends us to the storefront
