@@ -68,3 +68,29 @@ export async function generateZeroDecisionPacks(intentResult, userInput) {
   if (!response.ok) throw new Error('Failed to generate zero-decision packs');
   return response.json();
 }
+
+
+/**
+ * Fetches products from the catalog. Optionally filtered by a text query or category.
+ * Returns an array of product objects.
+ */
+export async function fetchProducts({ search, category } = {}) {
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  if (category && category !== 'All') params.set('category', category);
+  const qs = params.toString();
+  const response = await fetch(`${API_BASE}/products${qs ? `?${qs}` : ''}`);
+  if (!response.ok) throw new Error('Failed to load products');
+  const json = await response.json();
+  return json.data || [];
+}
+
+/**
+ * Fetches the list of available product categories.
+ */
+export async function fetchCategories() {
+  const response = await fetch(`${API_BASE}/products/categories`);
+  if (!response.ok) throw new Error('Failed to load categories');
+  const json = await response.json();
+  return json.data || [];
+}
