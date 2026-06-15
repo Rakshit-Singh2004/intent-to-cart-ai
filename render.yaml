@@ -1,0 +1,33 @@
+# Render Blueprint — deploys the Express backend as a web service.
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Render automatically injects PORT; the server reads process.env.PORT.
+# The app runs fully without AWS creds (local fallback engine); the AWS_*
+# vars are optional and only unlock Amazon Bedrock (Claude).
+services:
+  - type: web
+    name: intent-to-cart-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Set this to your Vercel frontend URL after the frontend is deployed,
+      # e.g. https://intent-to-cart-ai.vercel.app
+      # (*.vercel.app preview URLs are also allowed automatically by CORS.)
+      - key: FRONTEND_URL
+        sync: false
+      # --- Optional: Amazon Bedrock (app works without these) ---
+      - key: AWS_REGION
+        value: us-east-1
+      - key: BEDROCK_MODEL_ID
+        value: anthropic.claude-3-sonnet-20240229-v1:0
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
