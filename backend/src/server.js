@@ -18,8 +18,27 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
+// Allow the configured frontend origin(s) (comma-separated), local dev,
+// and any Vercel deployment (production + preview URLs).
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin(origin, callback) {
+    // Allow non-browser / same-origin requests (no Origin header)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    try {
+      if (/\.vercel\.app$/.test(new URL(origin).hostname)) {
+        return callback(null, true);
+      }
+    } catch (_) {
+      /* malformed origin – fall through to deny */
+    }
+    return callback(new Error(`Origin ${origin} not allowed by CORS`));
+  },
   credentials: true
 }));
 app.use(express.json());
