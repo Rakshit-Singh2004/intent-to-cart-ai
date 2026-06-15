@@ -62,13 +62,7 @@ app.use('/api/optimization', optimizationRoutes);
 app.use('/api/zero-decision', zeroDecisionRoutes);
 
 // Frontend is deployed separately on Vercel
-if (process.env.NODE_ENV === 'production') {
-  const publicPath = join(__dirname, '..', 'public');
-  app.use(express.static(publicPath));
-  app.get('*', (req, res) => {
-    res.sendFile(join(publicPath, 'index.html'));
-  });
-}
+
 
 // Error handling middleware
 app.use((err, req, res, next) => {
