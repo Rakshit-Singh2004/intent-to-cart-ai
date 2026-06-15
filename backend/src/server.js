@@ -61,7 +61,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/optimization', optimizationRoutes);
 app.use('/api/zero-decision', zeroDecisionRoutes);
 
-// Serve static frontend in production
+// Frontend is deployed separately on Vercel
 if (process.env.NODE_ENV === 'production') {
   const publicPath = join(__dirname, '..', 'public');
   app.use(express.static(publicPath));
