@@ -55,10 +55,10 @@ export const PRODUCT_IMAGES = {
   // Party
   prod_019b: { key: 'party', category: 'Party' },
   prod_020: { key: 'party', category: 'Party' },
-  prod_021: { key: 'party', category: 'Party' },
-  prod_024: { key: 'candles', category: 'Party' },
+  prod_021: { key: 'plates', category: 'Party' },
+  prod_024: { key: 'birthdaycandles', category: 'Party' },
   prod_025: { key: 'party', category: 'Party' },
-  prod_031a: { key: 'party', category: 'Party' },
+  prod_031a: { key: 'plates', category: 'Party' },
 
   // Home
   prod_019c: { key: 'tissues', category: 'Home' },
@@ -81,7 +81,7 @@ export const PRODUCT_IMAGES = {
 
   // Cleaning
   prod_030: { key: 'cleaning', category: 'Cleaning' },
-  prod_031: { key: 'cleaning', category: 'Cleaning' },
+  prod_031: { key: 'papertowel', category: 'Cleaning' },
   prod_032: { key: 'cleaning', category: 'Cleaning' },
   prod_033: { key: 'cleaning', category: 'Cleaning' },
 
@@ -89,18 +89,18 @@ export const PRODUCT_IMAGES = {
   prod_040: { key: 'personalcare', category: 'Personal Care' },
   prod_041: { key: 'towel', category: 'Personal Care' },
   prod_042: { key: 'personalcare', category: 'Personal Care' },
-  prod_043: { key: 'personalcare', category: 'Personal Care' },
+  prod_043: { key: 'soap', category: 'Personal Care' },
 
   // Electronics
-  prod_050: { key: 'electronics', category: 'Electronics' },
-  prod_051: { key: 'electronics', category: 'Electronics' },
-  prod_053: { key: 'electronics', category: 'Electronics' },
-  prod_054: { key: 'electronics', category: 'Electronics' },
-  prod_054a: { key: 'electronics', category: 'Electronics' },
+  prod_050: { key: 'powerbank', category: 'Electronics' },
+  prod_051: { key: 'usbcable', category: 'Electronics' },
+  prod_053: { key: 'flashlight', category: 'Electronics' },
+  prod_054: { key: 'batteries', category: 'Electronics' },
+  prod_054a: { key: 'powerbank', category: 'Electronics' },
 
   // Accessories
   prod_060: { key: 'umbrella', category: 'Accessories' },
-  prod_061: { key: 'umbrella', category: 'Accessories' },
+  prod_061: { key: 'raincoat', category: 'Accessories' },
 
   // Stationery
   prod_070: { key: 'stationery', category: 'Stationery' },
